@@ -1,4 +1,4 @@
-# Expense Splitter (Alta-Split) – Features
+# Expense Splitter – Features
 
 ## 1. Project Overview
 

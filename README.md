@@ -3,7 +3,7 @@
 
 
 
-# Expense Splitter (Alta-Split)
+# Expense Splitter 
 
 A full-stack web application designed for friends, hostel mates, or trip groups to record shared expenses, split bills flexibly, and see who owes whom while simplifying group debts into the fewest possible payments.
 

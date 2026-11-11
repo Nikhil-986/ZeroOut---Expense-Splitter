@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZeroOut — Expense Splitter & Debt Optimizer</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+    }
+
+    body {
+      background-color: #0f172a;
+      color: #f8fafc;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .auth-navbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.25rem 2.5rem;
+      border-bottom: 1px solid #1e293b;
+      background-color: #0f172a;
+    }
+
+    .brand-logo {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: #10b981;
+      letter-spacing: -0.5px;
+    }
+
+    .auth-toggle-btns button,
+    .logout-btn {
+      background: transparent;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      padding: 0.45rem 1rem;
+      margin-left: 0.5rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.15s ease;
+    }
+
+    .auth-toggle-btns button.active {
+      background-color: #10b981;
+      border-color: #10b981;
+      color: #06281e;
+      font-weight: 600;
+    }
+
+    .logout-btn {
+      background-color: #ef4444;
+      border-color: #ef4444;
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    .auth-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .auth-card {
+      width: 100%;
+      max-width: 420px;
+      background-color: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 2.25rem;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
+    }
+
+    .auth-card h1 {
+      font-size: 1.6rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .auth-subtitle {
+      color: #94a3b8;
+      font-size: 0.9rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .auth-error {
+      display: none;
+      background-color: rgba(239, 68, 68, 0.15);
+      border: 1px solid #ef4444;
+      color: #fca5a5;
+      padding: 0.75rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .auth-success {
+      display: none;
+      background-color: rgba(16, 185, 129, 0.15);
+      border: 1px solid #10b981;
+      color: #6ee7b7;
+      padding: 0.75rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.15rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+      margin-bottom: 0.4rem;
+      font-weight: 500;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 0.75rem 0.9rem;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background-color: #0f172a;
+      color: #f8fafc;
+      font-size: 0.95rem;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: #10b981;
+    }
+
+    .submit-btn {
+      width: 100%;
+      padding: 0.8rem;
+      margin-top: 0.5rem;
+      background-color: #10b981;
+      color: #052e16;
+      font-weight: 700;
+      font-size: 0.95rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: opacity 0.15s ease;
+    }
+
+    .submit-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .switch-text {
+      text-align: center;
+      margin-top: 1.4rem;
+      font-size: 0.875rem;
+      color: #94a3b8;
+    }
+
+    .switch-text span {
+      color: #10b981;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    /* Dashboard Preview View */
+    #dashboard-view {
+      display: none;
+      max-width: 900px;
+      width: 100%;
+      margin: 2.5rem auto;
+      padding: 0 1.5rem;
+    }
+
+    .dashboard-card {
+      background-color: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 2rem;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .stat-box {
+      background-color: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 1.25rem;
+    }
+
+    .stat-label {
+      color: #94a3b8;
+      font-size: 0.85rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+    }
+
+    .stat-value.positive {
+      color: #10b981;
+    }
+
+    .stat-value.negative {
+      color: #ef4444;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="auth-navbar">
+    <div class="brand-logo">ZeroOut</div>
+    <div class="auth-toggle-btns" id="nav-auth-btns">
+      <button type="button" id="btn-login-mode" class="active" onclick="setMode(true)">Login</button>
+      <button type="button" id="btn-signup-mode" onclick="setMode(false)">Sign Up</button>
+    </div>
+    <div id="nav-user-btns" style="display: none;">
+      <span id="nav-user-name" style="color: #cbd5e1; font-size: 0.9rem; margin-right: 0.75rem;"></span>
+      <button type="button" class="logout-btn" onclick="handleLogout()">Logout</button>
+    </div>
+  </header>
+
+  <!-- Authentication View -->
+  <main class="auth-container" id="auth-view">
+    <div class="auth-card">
+      <h1 id="auth-title">Welcome Back</h1>
+      <p class="auth-subtitle" id="auth-subtitle">
+        Sign in to track shared expenses and simplify group debts.
+      </p>
+
+      <div class="auth-error" id="auth-error"></div>
+      <div class="auth-success" id="auth-success"></div>
+
+      <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+        <div class="form-group" id="name-group" style="display: none;">
+          <label for="name">Full Name</label>
+          <input id="name" type="text" placeholder="Nikhil Jangid" />
+        </div>
+
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input id="email" type="email" placeholder="you@example.com" required />
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input id="password" type="password" placeholder="At least 6 characters" required minlength="6" />
+        </div>
+
+        <button type="submit" class="submit-btn" id="submit-btn">Sign In →</button>
+      </form>
+
+      <p class="switch-text">
+        <span id="switch-prompt" style="color: #94a3b8; font-weight: 400; cursor: default;">New here? </span>
+        <span id="switch-action" onclick="toggleMode()">Create an account</span>
+      </p>
+    </div>
+  </main>
+
+  <!-- Protected Dashboard View -->
+  <section id="dashboard-view">
+    <div class="dashboard-card">
+      <h2 id="welcome-heading">Welcome to ZeroOut!</h2>
+      <p id="welcome-email" style="color: #94a3b8; margin-top: 0.35rem;"></p>
+
+      <div class="summary-grid">
+        <div class="stat-box">
+          <div class="stat-label">You are owed</div>
+          <div class="stat-value positive">+ ₹1,450.00</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">You owe</div>
+          <div class="stat-value negative">- ₹300.00</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Net Group Balance</div>
+          <div class="stat-value positive">+ ₹1,150.00</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const API_BASE_URL = "http://localhost:5000";
+    let isLogin = true;
+
+    function setMode(loginMode) {
+      isLogin = loginMode;
+      document.getElementById("auth-error").style.display = "none";
+      document.getElementById("auth-success").style.display = "none";
+
+      document.getElementById("btn-login-mode").className = isLogin ? "active" : "";
+      document.getElementById("btn-signup-mode").className = !isLogin ? "active" : "";
+
+      document.getElementById("name-group").style.display = isLogin ? "none" : "block";
+      document.getElementById("name").required = !isLogin;
+
+      document.getElementById("auth-title").textContent = isLogin
+        ? "Welcome Back"
+        : "Create Your Account";
+      document.getElementById("auth-subtitle").textContent = isLogin
+        ? "Sign in to track shared expenses and simplify group debts."
+        : "Join ZeroOut to split bills with friends and hostel mates.";
+      document.getElementById("submit-btn").textContent = isLogin
+        ? "Sign In →"
+        : "Create Account →";
+      document.getElementById("switch-prompt").textContent = isLogin
+        ? "New here? "
+        : "Already have an account? ";
+      document.getElementById("switch-action").textContent = isLogin
+        ? "Create an account"
+        : "Sign in instead";
+    }
+
+    function toggleMode() {
+      setMode(!isLogin);
+    }
+
+    function showError(msg) {
+      const errBox = document.getElementById("auth-error");
+      errBox.textContent = msg;
+      errBox.style.display = "block";
+    }
+
+    function renderDashboard(user) {
+      document.getElementById("auth-view").style.display = "none";
+      document.getElementById("nav-auth-btns").style.display = "none";
+      document.getElementById("dashboard-view").style.display = "block";
+      document.getElementById("nav-user-btns").style.display = "block";
+
+      document.getElementById("nav-user-name").textContent = "Hi, " + (user.name || "Builder");
+      document.getElementById("welcome-heading").textContent =
+        "ZeroOut Dashboard — Welcome, " + (user.name || "Builder") + "!";
+      document.getElementById("welcome-email").textContent = "Logged in as " + user.email;
+    }
+
+    function handleLogout() {
+      localStorage.removeItem("zeroout_token");
+      localStorage.removeItem("zeroout_user");
+      document.getElementById("dashboard-view").style.display = "none";
+      document.getElementById("nav-user-btns").style.display = "none";
+      document.getElementById("auth-view").style.display = "flex";
+      document.getElementById("nav-auth-btns").style.display = "block";
+    }
+
+    async function handleAuthSubmit(e) {
+      e.preventDefault();
+      document.getElementById("auth-error").style.display = "none";
+      const submitBtn = document.getElementById("submit-btn");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Please wait...";
+
+      const name = document.getElementById("name").value.trim();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      try {
+        if (isLogin) {
+          const res = await fetch(`${API_BASE_URL}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Login failed");
+
+          localStorage.setItem("zeroout_token", data.access_token);
+          localStorage.setItem("zeroout_user", JSON.stringify(data.user));
+          renderDashboard(data.user);
+        } else {
+          const res = await fetch(`${API_BASE_URL}/auth/signup`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, email, password }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Signup failed");
+
+          const loginRes = await fetch(`${API_BASE_URL}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
+          });
+          const loginData = await loginRes.json();
+          if (!loginRes.ok) throw new Error(loginData.error || "Auto-login failed");
+
+          localStorage.setItem("zeroout_token", loginData.access_token);
+          localStorage.setItem("zeroout_user", JSON.stringify(loginData.user));
+          renderDashboard(loginData.user);
+        }
+      } catch (err) {
+        showError(err.message + " (Ensure your Node.js server is running on http://localhost:5000)");
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = isLogin ? "Sign In →" : "Create Account →";
+      }
+    }
+
+    // Check existing session on page load
+    window.addEventListener("DOMContentLoaded", () => {
+      const token = localStorage.getItem("zeroout_token");
+      const savedUser = localStorage.getItem("zeroout_user");
+      if (token && savedUser) {
+        try {
+          renderDashboard(JSON.parse(savedUser));
+        } catch (_) {}
+      }
+    });
+  </script>
+</body>
+</html>

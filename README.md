@@ -44,7 +44,6 @@ When friends, hostel mates, or travel groups share expenses over time, tracking 
 
 | Technology | Purpose |
 |---|---|
-| Python / JavaScript | Core programming languages for backend logic, applied DSA (Greedy, Heaps), and frontend logic |
 | FastAPI / Node | Backend framework for REST APIs, authentication, money calculations, and debt simplification |
 | PostgreSQL | Relational database for group data modelling, user accounts, expenses, and settlements |
 | React | Frontend library for building the user interface, group dashboards, and expense split forms |

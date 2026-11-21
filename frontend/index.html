@@ -1,0 +1,2757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="ZeroOut: Splitwise-style expense splitter with paisa-exact splits and greedy max-heap debt simplification." />
+<title>ZeroOut ₹ · Max-Heap Expense Splitter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Antonio:wght@700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://unpkg.com/lenis@1.1.20/dist/lenis.css" />
+<style>
+/* =====================================================================
+   Design tokens: Refero DESIGN.md
+   Palette, radii and borders come from the spec. Muted text is the
+   Carbon color at 68% opacity, since the palette has no gray text color.
+   ===================================================================== */
+:root {
+  --color-carbon: #000000;
+  --color-paper-white: #ffffff;
+  --color-sky-wash: #dceeff;
+  --color-concrete-gray: #cccccc;
+  --color-soft-mist: #e9e9e9;
+  --color-electric-blue: #4da2ff;
+  --color-mint-pop: #55db9c;
+  --color-lavender: #e9ccff;
+  --color-ember: #fb4903;
+  --color-sunburst: #ffd731;
+  --color-voltage-violet: #5c4ade;
+
+  --font-display: 'Antonio', 'Lateral', 'Druk', 'Bowlby One', Impact, sans-serif;
+  --font-ui: 'Inter', 'Aeonik Pro', Satoshi, 'General Sans', system-ui, sans-serif;
+
+  /* Semantic aliases used by components */
+  --bg-color: var(--color-sky-wash);
+  --surface-color: var(--color-paper-white);
+  --text-main: var(--color-carbon);
+  --text-muted: rgba(0, 0, 0, 0.68);
+  --border-color: var(--color-carbon);
+  --primary-color: var(--color-electric-blue);
+  --success-color: var(--color-mint-pop);
+  --danger-color: var(--color-ember);
+  --accent-purple: var(--color-voltage-violet);
+  --accent-amber: var(--color-sunburst);
+  --primary-soft: var(--color-sky-wash);
+  --success-soft: var(--color-mint-pop);
+  --danger-soft: var(--color-ember);
+  --purple-soft: var(--color-lavender);
+  --amber-soft: var(--color-sunburst);
+
+  /* Radii from the spec */
+  --radius-pill: 1600px;
+  --radius-body: 30px;
+  --radius-card: 20px;
+  --radius-card-elevated: 40px;
+  --radius-input: 16px;
+
+  /* Spacing (4px base) */
+  --space-section: 48px;
+  --space-card: 24px;
+  --ease-reveal: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: auto; } /* Lenis owns smooth scrolling */
+body {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.39;
+  letter-spacing: -0.01em;
+  background: var(--color-paper-white);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input, select { font: inherit; }
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--color-soft-mist);
+  border: 1px solid var(--border-color);
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 0.92em;
+}
+h1, h2 { font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: 0; }
+h1 { font-size: clamp(56px, 8.4vw, 128px); line-height: 0.8; }
+h2 { font-size: clamp(40px, 5.6vw, 64px); line-height: 1; }
+h3 { font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; }
+
+.container { max-width: 1440px; margin: 0 auto; padding: 0 32px; }
+section { padding: var(--space-section) 0; scroll-margin-top: 80px; }
+.section-head { text-align: center; margin-bottom: 48px; }
+.eyebrow {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.56;
+  letter-spacing: 0.032em;
+  text-transform: uppercase;
+  color: #000;
+  background: var(--color-electric-blue);
+  border: 1px solid var(--border-color);
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  margin-bottom: 16px;
+}
+.lead { color: var(--text-muted); font-size: 15px; max-width: 680px; margin: 16px auto 0; }
+.hint { font-size: 12px; line-height: 1.56; color: var(--text-muted); }
+.label { display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.032em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+.card {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card);
+}
+.card-pad { padding: var(--space-card); }
+.card-title {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap; margin-bottom: 16px; font-size: 18px; font-weight: 700; line-height: 1.2;
+}
+.empty { text-align: center; padding: 32px 12px; color: var(--text-muted); font-size: 15px; }
+
+/* Value pills: color comes from a fill band, never from colored text */
+.pos, .neg, .zero {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+  color: #000;
+  font-variant-numeric: tabular-nums;
+}
+.pos { background: var(--color-electric-blue); }
+.neg { background: var(--color-ember); }
+.zero { background: var(--color-soft-mist); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.fade-in { animation: fadeIn 0.4s var(--ease-reveal) both; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* Scroll-linked reveal: fades and scales each block into place */
+.reveal {
+  opacity: 0;
+  transform: translateY(32px) scale(0.97);
+  transition: opacity 900ms var(--ease-reveal), transform 900ms var(--ease-reveal);
+  will-change: opacity, transform;
+}
+.reveal.is-visible { opacity: 1; transform: translateY(0) scale(1); }
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .fade-in { animation: none; }
+}
+
+/* Buttons: pill radius, 1px carbon outline, no shadows */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px 22px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  font-weight: 700; font-size: 15px; letter-spacing: 0.03em;
+  transition: transform 0.25s var(--ease-reveal), background-color 0.2s;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) { transform: translateY(-2px); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary { background: var(--color-carbon); color: var(--color-paper-white); }
+.btn-ghost { background: var(--color-paper-white); color: #000; }
+.btn-ghost:hover:not(:disabled) { background: var(--color-soft-mist); }
+.btn-success { background: var(--color-voltage-violet); color: var(--color-paper-white); }
+.btn-dark-ghost { background: transparent; color: var(--color-paper-white); border-color: var(--color-paper-white); }
+.btn-dark-ghost:hover { background: rgba(255, 255, 255, 0.12); }
+.btn-sm { padding: 8px 14px; font-size: 13px; }
+
+.input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-input);
+  background: var(--color-paper-white);
+  color: #000;
+  outline: none;
+}
+.input:focus { outline: 3px solid var(--color-electric-blue); outline-offset: 2px; }
+.input:disabled { background: var(--color-soft-mist); color: var(--text-muted); }
+.input.invalid { outline: 3px solid var(--color-ember); outline-offset: 2px; }
+
+.seg {
+  display: inline-flex; gap: 2px; flex-wrap: wrap;
+  background: var(--color-soft-mist);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  padding: 4px;
+}
+.seg button {
+  padding: 7px 14px; border-radius: var(--radius-pill);
+  font-size: 13px; font-weight: 700; letter-spacing: 0.03em; color: #000;
+}
+.seg button.on { background: var(--color-carbon); color: var(--color-paper-white); }
+
+.badge {
+  display: inline-block;
+  font-size: 12px; font-weight: 700; line-height: 1.56; letter-spacing: 0.032em;
+  padding: 2px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-pill);
+  background: var(--color-paper-white); color: #000;
+}
+.badge.equal { background: var(--color-electric-blue); }
+.badge.exact { background: var(--color-lavender); }
+.badge.percentage { background: var(--color-sunburst); }
+.badge.settle { background: var(--color-lavender); }
+
+.notice {
+  font-size: 14px; color: #000;
+  background: var(--color-sky-wash);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card);
+  padding: 14px 18px;
+}
+.notice.warn { background: var(--color-sunburst); }
+.errors {
+  background: var(--color-ember); color: #000;
+  border: 1px solid var(--border-color); border-radius: var(--radius-card);
+  padding: 10px 14px; font-size: 13px; font-weight: 500; display: grid; gap: 4px;
+}
+.chip {
+  display: inline-block; font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+  background: var(--color-soft-mist); border: 1px solid var(--border-color);
+  padding: 4px 10px; border-radius: var(--radius-pill); margin: 3px;
+}
+.avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: inline-grid; place-items: center;
+  border: 1px solid var(--border-color);
+  color: #000; font-weight: 700; font-size: 13px; flex-shrink: 0;
+}
+.who { display: flex; align-items: center; gap: 12px; }
+.who small { display: block; color: var(--text-muted); font-size: 12px; }
+
+/* Navbar: paper surface, carbon bottom rule */
+.navbar {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--color-paper-white);
+  border-bottom: 1px solid var(--border-color);
+}
+.nav-inner { display: flex; align-items: center; justify-content: space-between; height: 72px; gap: 16px; }
+.brand {
+  font-family: var(--font-display); font-weight: 700; font-size: 28px;
+  text-transform: uppercase; letter-spacing: 0; line-height: 1; white-space: nowrap;
+}
+.brand span { color: var(--color-voltage-violet); }
+.nav-links { display: flex; gap: 4px; flex-wrap: wrap; }
+.nav-link {
+  padding: 8px 14px; border: 1px solid transparent; border-radius: var(--radius-pill);
+  font-size: 13px; font-weight: 700; letter-spacing: 0.03em; color: #000;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.nav-link:hover { background: var(--color-soft-mist); border-color: var(--border-color); }
+.nav-right { display: flex; gap: 12px; align-items: center; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.032em;
+  padding: 6px 12px; border-radius: var(--radius-pill);
+  border: 1px solid var(--border-color);
+  background: var(--color-paper-white); color: #000; white-space: nowrap;
+}
+.pill.online { background: var(--color-electric-blue); }
+.pill.offline { background: var(--color-sunburst); }
+
+/* Hero: sky wash surface, condensed display headline */
+.hero { padding: 96px 0 80px; background: var(--color-sky-wash); }
+.band-sky { background: var(--color-sky-wash); }
+.band-paper { background: var(--color-paper-white); }
+.band-concrete { background: var(--color-concrete-gray); }
+.gradient-text { color: var(--color-voltage-violet); }
+.hero-cta { display: flex; gap: 12px; justify-content: center; margin-top: 32px; flex-wrap: wrap; }
+.mac {
+  margin-top: 64px;
+  background: var(--color-paper-white);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card-elevated);
+  overflow: hidden;
+}
+.mac-bar {
+  display: flex; align-items: center; gap: 8px; padding: 14px 20px;
+  background: var(--color-soft-mist);
+  border-bottom: 1px solid var(--border-color);
+}
+.mac-dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--border-color); flex-shrink: 0; }
+.mac-dot.r { background: var(--color-ember); }
+.mac-dot.y { background: var(--color-sunburst); }
+.mac-dot.g { background: var(--color-mint-pop); }
+.mac-url {
+  flex: 1; max-width: 460px; margin: 0 auto; text-align: center; font-size: 12px;
+  color: #000; background: var(--color-paper-white); border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill); padding: 4px 14px;
+  font-family: ui-monospace, Menlo, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mac-body { padding: 24px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.kpi {
+  height: 100%;
+  padding: 20px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-color);
+  background: var(--color-paper-white);
+}
+.kpi-label { font-size: 12px; font-weight: 700; letter-spacing: 0.032em; text-transform: uppercase; color: #000; }
+.kpi-value {
+  font-family: var(--font-display); font-size: 30px; font-weight: 700; line-height: 1;
+  margin: 10px 0 8px; color: #000; font-variant-numeric: tabular-nums;
+}
+.kpi-sub { font-size: 12px; line-height: 1.56; color: rgba(0, 0, 0, 0.72); }
+
+/* Problem: ember (before) vs mint (after) fill cards */
+.compare { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+.cmp-card { padding: 32px; border-radius: var(--radius-card); border: 1px solid var(--border-color); color: #000; }
+.cmp-bad { background: var(--color-ember); }
+.cmp-good { background: var(--color-mint-pop); }
+.cmp-card h3 { font-size: 24px; margin-top: 14px; }
+.cmp-card ul { list-style: none; margin-top: 20px; display: grid; gap: 14px; }
+.cmp-card li { display: flex; gap: 12px; font-size: 15px; }
+.cmp-icon { font-weight: 700; flex-shrink: 0; }
+
+/* Settle Up */
+.how-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+.how-card { padding: 20px; display: flex; gap: 14px; align-items: flex-start; }
+.settle-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+a.btn { text-decoration: none; }
+.split-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; }
+.row-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid var(--color-concrete-gray); font-size: 15px;
+}
+.trace-step {
+  font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.6; padding: 10px 0;
+  border-bottom: 1px solid var(--color-concrete-gray); color: #000;
+}
+.flow-step { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--color-concrete-gray); }
+.flow-num {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--color-electric-blue); color: #000;
+  border: 1px solid var(--border-color);
+  display: grid; place-items: center; font-weight: 700; font-size: 14px; flex-shrink: 0;
+}
+
+/* Workspace */
+.ws-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 20px; align-items: start; }
+.ws-col { display: flex; flex-direction: column; gap: 20px; }
+.group-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+.gpill {
+  padding: 8px 16px; border-radius: var(--radius-pill);
+  border: 1px solid var(--border-color); background: var(--color-paper-white);
+  font-size: 13px; font-weight: 700; color: #000;
+}
+.gpill.active { background: var(--color-carbon); color: var(--color-paper-white); }
+.inline-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.inline-form .input { flex: 1; min-width: 160px; }
+.grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.span-2 { grid-column: 1 / -1; }
+.table-wrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.table th {
+  text-align: left; font-size: 12px; font-weight: 700; letter-spacing: 0.032em; text-transform: uppercase;
+  color: var(--text-muted); padding: 10px 8px; border-bottom: 1px solid var(--border-color);
+}
+.table td { padding: 14px 8px; border-bottom: 1px solid var(--color-concrete-gray); font-variant-numeric: tabular-nums; }
+.table tfoot td { border-bottom: none; }
+.table th.num, .table td.num { text-align: right; }
+.seg-plan { margin-bottom: 4px; }
+.txn {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 14px 16px; border: 1px solid var(--border-color); border-radius: var(--radius-card);
+  background: var(--color-paper-white); margin-top: 12px;
+}
+.txn-flow { display: flex; align-items: center; gap: 8px; font-size: 15px; flex-wrap: wrap; }
+.arrow { color: var(--text-muted); }
+.trace {
+  margin-top: 16px; border: 1px solid var(--border-color);
+  border-radius: var(--radius-card); padding: 14px 16px;
+  background: var(--color-soft-mist);
+}
+.trace-toggle {
+  display: flex; justify-content: space-between; width: 100%;
+  font-weight: 700; font-size: 14px; color: #000;
+}
+.split-row {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) 140px; gap: 12px; align-items: center;
+  padding: 10px 0; border-bottom: 1px solid var(--color-concrete-gray);
+}
+.split-row input[type="checkbox"] { accent-color: var(--color-voltage-violet); width: 16px; height: 16px; }
+.feed-scroll { max-height: 380px; overflow: auto; }
+.feed-item { display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--color-concrete-gray); align-items: center; }
+.feed-ico {
+  width: 36px; height: 36px; border-radius: 16px;
+  border: 1px solid var(--border-color);
+  display: grid; place-items: center;
+  font-size: 16px; background: var(--color-sky-wash); flex-shrink: 0;
+}
+
+/* Simulator */
+.sim-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 32px; }
+input[type="range"] { width: 100%; accent-color: var(--color-voltage-violet); }
+.bar-row { margin-bottom: 20px; }
+.bar-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; gap: 10px; }
+.bar-track {
+  height: 16px; background: var(--color-soft-mist);
+  border: 1px solid var(--border-color); border-radius: var(--radius-pill); overflow: hidden;
+}
+.bar-fill { height: 100%; border-radius: var(--radius-pill); transition: width 0.5s var(--ease-reveal); }
+.bar-raw { background: var(--color-ember); }
+.bar-worst { background: var(--color-concrete-gray); }
+.bar-heap { background: var(--color-mint-pop); }
+
+/* Templates */
+.tpl-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.tpl {
+  padding: 24px; display: flex; flex-direction: column; gap: 14px;
+  transition: transform 0.35s var(--ease-reveal);
+}
+.tpl:hover { transform: translateY(-4px); }
+.tpl-emoji { font-size: 32px; line-height: 1; }
+.tpl-amt {
+  font-family: var(--font-display); font-size: 30px; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Auth gate: full-page sign-in, shown before the app is reachable */
+.auth-page {
+  min-height: 100vh; display: grid; place-items: center;
+  padding: 48px 16px; background: var(--color-sky-wash);
+}
+.auth-card {
+  width: 100%; max-width: 440px; padding: 36px 32px;
+  background: var(--color-paper-white);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card-elevated);
+}
+.auth-divider {
+  display: flex; align-items: center; gap: 12px; margin: 20px 0 14px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.032em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.auth-divider::before, .auth-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--color-concrete-gray);
+}
+@media (max-width: 560px) { .auth-card { padding: 28px 20px; } }
+
+/* Toast + modal */
+.toast {
+  position: fixed; right: 24px; bottom: 24px; z-index: 100; padding: 14px 20px;
+  border: 1px solid var(--border-color); border-radius: var(--radius-card);
+  background: var(--color-paper-white); color: #000;
+  font-weight: 700; font-size: 14px; max-width: 380px;
+  animation: fadeIn 0.3s var(--ease-reveal) both;
+}
+.toast.success { background: var(--color-electric-blue); }
+.toast.error { background: var(--color-ember); }
+.overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
+  display: grid; place-items: center; z-index: 90; padding: 20px;
+  animation: fadeIn 0.2s var(--ease-reveal) both;
+}
+.modal {
+  width: 100%; max-width: 440px; padding: 32px;
+  background: var(--color-paper-white);
+  border-radius: var(--radius-card-elevated);
+  animation: fadeIn 0.25s var(--ease-reveal) both;
+}
+
+/* Footer: carbon surface */
+footer { background: var(--color-carbon); color: var(--color-paper-white); padding: 56px 0 32px; }
+.footer-grid { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; align-items: center; }
+.footer-grid .brand { color: var(--color-paper-white); }
+.footer-grid .brand span { color: var(--color-electric-blue); }
+.footer-note { font-size: 12px; line-height: 1.56; color: var(--color-concrete-gray); }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .ws-grid, .sim-grid, .compare, .split-cols, .settle-grid, .how-grid { grid-template-columns: minmax(0, 1fr); }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tpl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nav-links { display: none; }
+}
+@media (max-width: 560px) {
+  .container { padding: 0 16px; }
+  .tpl-grid { grid-template-columns: minmax(0, 1fr); }
+  .kpi-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .kpi-value { font-size: 24px; }
+  .grid-2 { grid-template-columns: minmax(0, 1fr); }
+  .split-row { grid-template-columns: 20px minmax(0, 1fr) 110px; }
+  .nav-right .pill { display: none; }
+  .nav-right .who > span:not(.avatar) { display: none; }
+  .nav-inner { height: auto; padding: 12px 0; flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js" crossorigin></script>
+<script src="https://unpkg.com/lenis@1.1.20/dist/lenis.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+/* =====================================================================
+   CONFIG, FORMATTERS & PRIMITIVES
+   ===================================================================== */
+const API_BASE = 'http://localhost:5000';
+const SANDBOX_KEY = 'zeroout_sandbox_v2';
+const SESSION_KEY = 'zeroout_session_v2';
+const ME_ID = 'u-siddharth';
+const MAX_AMOUNT_PAISE = 9999999999;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const SPLIT_MODES = ['EQUAL', 'EXACT', 'PERCENTAGE'];
+
+const INR = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
+const fmt = (paise) => INR.format((paise || 0) / 100);
+const fmtSigned = (paise) => (paise > 0 ? '+' : paise < 0 ? '-' : '') + INR.format(Math.abs(paise || 0) / 100);
+const toPaise = (v) => Math.round(Number(v) * 100);
+const round2 = (x) => Math.round(x * 100) / 100;
+const uid = () =>
+  window.crypto && crypto.randomUUID
+    ? crypto.randomUUID()
+    : 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+const initials = (name) => name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+// Refero palette fills for avatars (no violet: black initials would be low contrast on it)
+const AVATAR_COLORS = ['#4da2ff', '#55db9c', '#e9ccff', '#ffd731', '#fb4903', '#dceeff', '#cccccc'];
+const colorFor = (id) => {
+  let h = 0;
+  for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+};
+const when = (iso) =>
+  new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+/* Scroll-linked reveal: fades and scales its child into place once it enters the viewport */
+function Reveal({ children, delay = 0, className = '', style }) {
+  const ref = useRef(null);
+  const [shown, setShown] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (shown || !el) return undefined;
+    if (!('IntersectionObserver' in window)) {
+      setShown(true);
+      return undefined;
+    }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((en) => en.isIntersecting)) {
+        setShown(true);
+        io.disconnect();
+      }
+    }, { threshold: 0.1, rootMargin: '0px 0px -8% 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [shown]);
+
+  return (
+    <div
+      ref={ref}
+      className={`reveal ${shown ? 'is-visible' : ''} ${className}`.trim()}
+      style={{ transitionDelay: `${delay}ms`, ...style }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/* KPI card. `color` fills the card band (Refero color band, not text). */
+function Kpi({ label, value, sub, color, delay = 0 }) {
+  return (
+    <Reveal delay={delay}>
+      <div className="kpi" style={color ? { background: color } : undefined}>
+        <div className="kpi-label">{label}</div>
+        <div className="kpi-value">{value}</div>
+        <div className="kpi-sub">{sub}</div>
+      </div>
+    </Reveal>
+  );
+}
+
+function Bar({ label, value, width, cls }) {
+  return (
+    <div className="bar-row">
+      <div className="bar-head"><span>{label}</span><b>{value}</b></div>
+      <div className="bar-track"><div className={`bar-fill ${cls}`} style={{ width }} /></div>
+    </div>
+  );
+}
+
+/* =====================================================================
+   PURE ENGINE (mirrors backend/routes/groups.js exactly)
+   ===================================================================== */
+class MaxHeap {
+  constructor(compare) { this.heap = []; this.compare = compare; }
+  size() { return this.heap.length; }
+  push(item) { this.heap.push(item); this._siftUp(this.heap.length - 1); }
+  pop() {
+    if (this.heap.length === 0) return undefined;
+    const top = this.heap[0];
+    const last = this.heap.pop();
+    if (this.heap.length > 0) { this.heap[0] = last; this._siftDown(0); }
+    return top;
+  }
+  _siftUp(i) {
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.compare(this.heap[i], this.heap[p]) <= 0) break;
+      [this.heap[i], this.heap[p]] = [this.heap[p], this.heap[i]];
+      i = p;
+    }
+  }
+  _siftDown(i) {
+    const n = this.heap.length;
+    for (;;) {
+      const l = 2 * i + 1, r = l + 1;
+      let largest = i;
+      if (l < n && this.compare(this.heap[l], this.heap[largest]) > 0) largest = l;
+      if (r < n && this.compare(this.heap[r], this.heap[largest]) > 0) largest = r;
+      if (largest === i) break;
+      [this.heap[i], this.heap[largest]] = [this.heap[largest], this.heap[i]];
+      i = largest;
+    }
+  }
+}
+
+function splitEqual(totalPaise, ids) {
+  const n = ids.length;
+  const base = Math.floor(totalPaise / n);
+  const rem = totalPaise % n;
+  return ids.map((user_id, i) => ({
+    user_id,
+    amount_owed_paise: base + (i < rem ? 1 : 0),
+    percentage: round2(100 / n),
+  }));
+}
+
+function buildSplits({ totalPaise, splitType, participants, values = {} }) {
+  if (!Number.isInteger(totalPaise) || totalPaise <= 0 || totalPaise > MAX_AMOUNT_PAISE) {
+    throw new Error('Amount must be greater than ₹0');
+  }
+  if (!participants.length) throw new Error('Select at least one participant');
+
+  if (splitType === 'EQUAL') return splitEqual(totalPaise, participants);
+
+  if (splitType === 'EXACT') {
+    const rows = participants.map((id) => ({ user_id: id, amount_owed_paise: toPaise(values[id] || 0), percentage: 0 }));
+    if (rows.some((r) => !Number.isInteger(r.amount_owed_paise) || r.amount_owed_paise < 0)) {
+      throw new Error('Exact amounts must be ₹0 or more');
+    }
+    const sum = rows.reduce((a, r) => a + r.amount_owed_paise, 0);
+    if (sum !== totalPaise) throw new Error(`Exact shares total ${fmt(sum)} but the bill is ${fmt(totalPaise)}`);
+    rows.forEach((r) => { r.percentage = round2((r.amount_owed_paise * 100) / totalPaise); });
+    return rows;
+  }
+
+  if (splitType === 'PERCENTAGE') {
+    const h = participants.map((id) => Math.round(Number(values[id] || 0) * 100));
+    if (h.some((x) => !Number.isFinite(x) || x < 0 || x > 10000)) throw new Error('Each percentage must be between 0 and 100');
+    const sum = h.reduce((a, b) => a + b, 0);
+    if (sum !== 10000) throw new Error(`Percentages total ${(sum / 100).toFixed(2)}%. They must total exactly 100%`);
+    let allocated = 0;
+    return participants.map((id, i) => {
+      const amt = i === participants.length - 1 ? totalPaise - allocated : Math.floor((totalPaise * h[i]) / 10000);
+      allocated += amt;
+      return { user_id: id, amount_owed_paise: amt, percentage: h[i] / 100 };
+    });
+  }
+  throw new Error('Unknown split type');
+}
+
+function simplifyDebtsMaxHeap(balances) {
+  const creditors = new MaxHeap((a, b) => a.amount - b.amount);
+  const debtors = new MaxHeap((a, b) => a.amount - b.amount);
+  for (const b of balances) {
+    if (b.net_paise > 0) creditors.push({ userId: b.user_id, name: b.name, amount: b.net_paise });
+    else if (b.net_paise < 0) debtors.push({ userId: b.user_id, name: b.name, amount: -b.net_paise });
+  }
+  const transactions = [];
+  const trace = [];
+  let step = 0;
+  while (creditors.size() > 0 && debtors.size() > 0) {
+    const c = creditors.pop();
+    const d = debtors.pop();
+    const transfer = Math.min(c.amount, d.amount);
+    c.amount -= transfer;
+    d.amount -= transfer;
+    step += 1;
+    transactions.push({ from_user_id: d.userId, from_name: d.name, to_user_id: c.userId, to_name: c.name, amount_paise: transfer });
+    trace.push({
+      step, from_name: d.name, to_name: c.name, transfer_paise: transfer,
+      debtor_remaining_paise: d.amount, creditor_remaining_paise: c.amount,
+    });
+    if (c.amount > 0) creditors.push(c);
+    if (d.amount > 0) debtors.push(d);
+  }
+  return { transactions, trace };
+}
+
+function rawPairwise({ splits, payerOf, settlements, nameOf }) {
+  const owe = new Map();
+  const add = (from, to, paise) => {
+    if (!from || !to || from === to || !paise) return;
+    const key = `${from}|${to}`;
+    owe.set(key, (owe.get(key) || 0) + paise);
+  };
+  splits.forEach((s) => add(s.user_id, payerOf.get(s.expense_id), s.amount_owed_paise));
+  settlements.forEach((s) => add(s.paid_by, s.paid_to, -s.amount_paise));
+
+  const out = [];
+  const seen = new Set();
+  for (const [key, value] of owe) {
+    if (seen.has(key)) continue;
+    const [a, b] = key.split('|');
+    const reverse = `${b}|${a}`;
+    seen.add(key);
+    seen.add(reverse);
+    const net = value - (owe.get(reverse) || 0);
+    if (net > 0) out.push({ from_user_id: a, from_name: nameOf(a), to_user_id: b, to_name: nameOf(b), amount_paise: net });
+    else if (net < 0) out.push({ from_user_id: b, from_name: nameOf(b), to_user_id: a, to_name: nameOf(a), amount_paise: -net });
+  }
+  return out.sort((x, y) => y.amount_paise - x.amount_paise);
+}
+
+function computeSummary({ members, expenses, splits, settlements }) {
+  const ledger = new Map(members.map((m) => [m.user_id, {
+    user_id: m.user_id, name: m.name, email: m.email, upi_id: m.upi_id || null,
+    total_paid_paise: 0, total_owed_paise: 0,
+    settlements_paid_paise: 0, settlements_received_paise: 0, net_paise: 0,
+  }]));
+  const payerOf = new Map();
+  expenses.forEach((e) => {
+    payerOf.set(e.id, e.paid_by);
+    const row = ledger.get(e.paid_by);
+    if (row) row.total_paid_paise += e.amount_paise;
+  });
+  splits.forEach((s) => {
+    const row = ledger.get(s.user_id);
+    if (row) row.total_owed_paise += s.amount_owed_paise;
+  });
+  settlements.forEach((s) => {
+    const a = ledger.get(s.paid_by);
+    if (a) a.settlements_paid_paise += s.amount_paise;
+    const b = ledger.get(s.paid_to);
+    if (b) b.settlements_received_paise += s.amount_paise;
+  });
+  const rows = [...ledger.values()];
+  rows.forEach((r) => {
+    r.net_paise = (r.total_paid_paise + r.settlements_paid_paise) - (r.total_owed_paise + r.settlements_received_paise);
+  });
+  const balances = rows.map((r) => ({ user_id: r.user_id, name: r.name, net_paise: r.net_paise }));
+  const { transactions, trace } = simplifyDebtsMaxHeap(balances);
+  const nameOf = (id) => (ledger.get(id) || {}).name || 'Unknown';
+  return {
+    members: rows,
+    balances,
+    optimizedSettlements: transactions,
+    heapTrace: trace,
+    rawSettlements: rawPairwise({ splits, payerOf, settlements, nameOf }),
+    expenses,
+    splits,
+    settlements,
+    zeroSumPaise: balances.reduce((a, b) => a + b.net_paise, 0),
+  };
+}
+
+/* =====================================================================
+   HYBRID SANDBOX (localStorage): pre-seeded Indian groups
+   ===================================================================== */
+const SEED_USERS = [
+  { id: "u-siddharth", name: "Siddharth Nain", email: "siddharth.nain@zeroout.app" },
+  { id: "u-sarthak", name: "Sarthak Choudhari", email: "sarthak.choudhari@zeroout.app", upi_id: "sarthak.choudhari@examplebank" },
+  { id: "u-darshil", name: "Darshil Gehlot", email: "darshil.gehlot@zeroout.app", upi_id: "darshil.gehlot@examplebank" },
+  { id: "u-himanshu", name: "Himanshu Saxena", email: "himanshu.saxena@zeroout.app", upi_id: "himanshu.saxena@examplebank" },
+  { id: "u-shahid", name: "Md Shahid Afridi", email: "shahid.afridi@zeroout.app", upi_id: "shahid.afridi@examplebank" },
+  { id: "u-bhuvan", name: "Bhuvan Meenawat", email: "bhuvan.meenawat@zeroout.app", upi_id: "bhuvan.meenawat@examplebank" },
+  { id: "u-yuvraj", name: "Yuvraj Saini", email: "yuvraj.saini@zeroout.app", upi_id: "yuvraj.saini@examplebank" },
+  { id: "u-abhi", name: "Abhi Sharma", email: "abhi.sharma@zeroout.app", upi_id: "abhi.sharma@examplebank" },
+];
+
+function buildSeed() {
+  const db = {
+    users: SEED_USERS.map((u) => ({ ...u })),
+    groups: [],
+    members: [],
+    expenses: [],
+    splits: [],
+    settlements: [],
+  };
+  const at = (daysAgo) => new Date(Date.now() - daysAgo * 86400000).toISOString();
+
+  const addGroup = (id, name, category, memberIds) => {
+    db.groups.push({ id, name, category, created_by: memberIds[0], created_at: at(12) });
+    memberIds.forEach((u) => db.members.push({ group_id: id, user_id: u, joined_at: at(12) }));
+  };
+
+  const addSeedExpense = ({ id, group, paidBy, description, amount, splitType, participants, values = {}, daysAgo }) => {
+    const totalPaise = toPaise(amount);
+    const rows = buildSplits({ totalPaise, splitType, participants, values });
+    db.expenses.push({
+      id, group_id: group, paid_by: paidBy, amount_paise: totalPaise,
+      description, split_type: splitType, created_at: at(daysAgo),
+    });
+    rows.forEach((r) => db.splits.push({
+      expense_id: id, user_id: r.user_id,
+      amount_owed_paise: r.amount_owed_paise, percentage: r.percentage,
+    }));
+  };
+
+  // Goa Trip 2026
+  const GOA = ['u-siddharth', 'u-sarthak', 'u-darshil', 'u-himanshu'];
+  addGroup('g-goa', 'Goa Trip 2026 🏖️', 'Trip', GOA);
+  addSeedExpense({ id: 'e-goa-1', group: 'g-goa', paidBy: 'u-siddharth', description: 'Villa booking, Candolim (3 nights)', amount: 9600, splitType: 'EQUAL', participants: GOA, daysAgo: 9 });
+  addSeedExpense({ id: 'e-goa-2', group: 'g-goa', paidBy: 'u-sarthak', description: 'Goa Beach Shack Dinner', amount: 2400, splitType: 'EQUAL', participants: GOA, daysAgo: 7 });
+  addSeedExpense({ id: 'e-goa-3', group: 'g-goa', paidBy: 'u-darshil', description: 'Scooter rental (2 days)', amount: 1600, splitType: 'EQUAL', participants: GOA, daysAgo: 6 });
+  addSeedExpense({ id: 'e-goa-4', group: 'g-goa', paidBy: 'u-himanshu', description: 'Uber intercity cab', amount: 1500, splitType: 'EXACT', participants: GOA, values: { 'u-siddharth': 400, 'u-sarthak': 400, 'u-darshil': 350, 'u-himanshu': 350 }, daysAgo: 4 });
+  addSeedExpense({ id: 'e-goa-5', group: 'g-goa', paidBy: 'u-siddharth', description: 'Fuel and cold drinks', amount: 1000, splitType: 'PERCENTAGE', participants: GOA, values: { 'u-siddharth': 25, 'u-sarthak': 25, 'u-darshil': 25, 'u-himanshu': 25 }, daysAgo: 2 });
+  db.settlements.push({ id: 's-goa-1', group_id: 'g-goa', paid_by: 'u-darshil', paid_to: 'u-sarthak', amount_paise: 50000, created_at: at(1) });
+
+  // Hostel Room 302
+  const HOSTEL = ['u-siddharth', 'u-shahid', 'u-bhuvan'];
+  addGroup('g-hostel', 'Hostel Room 302 🏠', 'Hostel', HOSTEL);
+  addSeedExpense({ id: 'e-h-1', group: 'g-hostel', paidBy: 'u-shahid', description: 'ACT Fibernet Wi-Fi', amount: 1178, splitType: 'EQUAL', participants: HOSTEL, daysAgo: 5 });
+  addSeedExpense({ id: 'e-h-2', group: 'g-hostel', paidBy: 'u-bhuvan', description: 'Maid and cook (monthly)', amount: 3000, splitType: 'EQUAL', participants: HOSTEL, daysAgo: 3 });
+  addSeedExpense({ id: 'e-h-3', group: 'g-hostel', paidBy: 'u-siddharth', description: 'Zomato late-night order', amount: 840, splitType: 'EQUAL', participants: HOSTEL, daysAgo: 1 });
+
+  return db;
+}
+
+function loadSandbox() {
+  try {
+    const db = JSON.parse(localStorage.getItem(SANDBOX_KEY) || 'null');
+    if (db && Array.isArray(db.groups) && Array.isArray(db.users)) return db;
+  } catch (e) { /* corrupt storage: fall back to seed */ }
+  return buildSeed();
+}
+
+function loadSession() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+  } catch (e) {
+    return null;
+  }
+}
+
+function sbGroupsFor(db, userId) {
+  const mine = new Set(db.members.filter((m) => m.user_id === userId).map((m) => m.group_id));
+  return db.groups
+    .filter((g) => mine.has(g.id))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+    .map((g) => ({
+      ...g,
+      member_count: db.members.filter((m) => m.group_id === g.id).length,
+    }));
+}
+
+function sbSummary(db, groupId) {
+  const members = db.members
+    .filter((m) => m.group_id === groupId)
+    .sort((a, b) => a.joined_at.localeCompare(b.joined_at))
+    .map((m) => db.users.find((u) => u.id === m.user_id))
+    .filter(Boolean)
+    .map((u) => ({ user_id: u.id, name: u.name, email: u.email, upi_id: u.upi_id || null }));
+
+  const expenses = db.expenses
+    .filter((e) => e.group_id === groupId)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const expenseIds = new Set(expenses.map((e) => e.id));
+  const splits = db.splits.filter((s) => expenseIds.has(s.expense_id));
+  const settlements = db.settlements
+    .filter((s) => s.group_id === groupId)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+  return computeSummary({ members, expenses, splits, settlements });
+}
+
+/* =====================================================================
+   API CLIENT
+   ===================================================================== */
+async function apiCall(method, path, body, token) {
+  let res;
+  try {
+    res = await fetch(API_BASE + path, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    const err = new Error('PostgreSQL API unreachable');
+    err.network = true;
+    throw err;
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.error || `Request failed (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+/* =====================================================================
+   APP: connection state, data-source switching, mutations
+   ===================================================================== */
+function App() {
+  const [online, setOnline] = useState(null);
+  const [sandbox, setSandbox] = useState(loadSandbox);
+  const [session, setSession] = useState(loadSession);
+  const [groups, setGroups] = useState([]);
+  const [activeId, setActiveId] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [version, setVersion] = useState(0);
+  const [toast, setToast] = useState(null);
+  const lenisRef = useRef(null);
+
+  // PostgreSQL is used only when the API is up AND a server session exists.
+  const useApi = Boolean(online && session && session.mode === 'api' && session.token);
+  const token = useApi ? session.token : null;
+  const sandboxMe = session && session.mode === 'sandbox'
+    ? session.user
+    : (sandbox.users.find((u) => u.id === ME_ID) || sandbox.users[0]);
+  const me = useApi ? session.user : sandboxMe;
+  const activeGroup = groups.find((g) => g.id === activeId) || null;
+
+  const bump = useCallback(() => setVersion((v) => v + 1), []);
+  const notify = useCallback((msg, type = 'success') => setToast({ id: Date.now(), msg, type }), []);
+  const handleError = useCallback((e) => {
+    if (e.status === 401) {
+      setSession(null);
+      notify('Your session expired. Please sign in again.', 'error');
+    } else {
+      notify(e.message, 'error');
+    }
+  }, [notify]);
+
+  // Lenis smooth scroll, driven by requestAnimationFrame
+  useEffect(() => {
+    if (!window.Lenis) return undefined;
+    const lenis = new window.Lenis({
+      duration: 1.15,
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      smoothWheel: true,
+    });
+    lenisRef.current = lenis;
+    let frame = 0;
+    const raf = (time) => {
+      lenis.raf(time);
+      frame = requestAnimationFrame(raf);
+    };
+    frame = requestAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(frame);
+      lenis.destroy();
+      lenisRef.current = null;
+    };
+  }, []);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(null), 2800);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // Health ping on load, then every 15 seconds
+  useEffect(() => {
+    let alive = true;
+    const ping = async () => {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 1500);
+      try {
+        const r = await fetch(`${API_BASE}/health`, { signal: ctl.signal });
+        const j = await r.json().catch(() => ({}));
+        if (alive) setOnline(r.ok && j.status === 'ok');
+      } catch (e) {
+        if (alive) setOnline(false);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    ping();
+    const iv = setInterval(ping, 15000);
+    return () => { alive = false; clearInterval(iv); };
+  }, []);
+
+  // Persist sandbox and session
+  useEffect(() => {
+    try { localStorage.setItem(SANDBOX_KEY, JSON.stringify(sandbox)); } catch (e) { /* quota */ }
+  }, [sandbox]);
+
+  useEffect(() => {
+    try {
+      if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      else localStorage.removeItem(SESSION_KEY);
+    } catch (e) { /* ignore */ }
+  }, [session]);
+
+  // Load the group list from the active data source
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = useApi
+          ? await apiCall('GET', '/groups', null, token)
+          : sbGroupsFor(sandbox, me.id);
+        if (cancelled) return;
+        setGroups(list);
+        setActiveId((prev) => (list.some((g) => g.id === prev) ? prev : (list[0] ? list[0].id : null)));
+      } catch (e) {
+        if (!cancelled) handleError(e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [useApi, token, sandbox, me.id, version, handleError]);
+
+  // Load the summary for the active group
+  useEffect(() => {
+    if (!activeId) {
+      setSummary(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const s = useApi
+          ? await apiCall('GET', `/groups/${activeId}/summary`, null, token)
+          : sbSummary(sandbox, activeId);
+        if (!cancelled) setSummary(s);
+      } catch (e) {
+        if (!cancelled) {
+          setSummary(null);
+          handleError(e);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeId, useApi, token, sandbox, version, handleError]);
+
+  /* ---------------- Mutations (same contract for both data sources) ---------------- */
+  const createGroup = async (name, category = 'Trip') => {
+    if (useApi) {
+      const g = await apiCall('POST', '/groups', { name, category }, token);
+      setActiveId(g.id);
+      bump();
+      return g;
+    }
+    const id = uid();
+    const now = new Date().toISOString();
+    const group = { id, name, category, created_by: me.id, created_at: now };
+    setSandbox((db) => ({
+      ...db,
+      groups: [...db.groups, group],
+      members: [...db.members, { group_id: id, user_id: me.id, joined_at: now }],
+    }));
+    setActiveId(id);
+    return group;
+  };
+
+  const addMember = async (groupId, email) => {
+    const clean = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(clean)) throw new Error('Enter a valid email address');
+
+    if (useApi) {
+      await apiCall('POST', `/groups/${groupId}/members`, { email: clean }, token);
+      bump();
+      return;
+    }
+
+    const user = sandbox.users.find((u) => u.email.toLowerCase() === clean);
+    if (!user) throw new Error('No ZeroOut account for that email yet. They need to sign up first.');
+    if (sandbox.members.some((m) => m.group_id === groupId && m.user_id === user.id)) {
+      throw new Error('That person is already in this group');
+    }
+    setSandbox((db) => ({
+      ...db,
+      members: [...db.members, { group_id: groupId, user_id: user.id, joined_at: new Date().toISOString() }],
+    }));
+  };
+
+  const addExpense = async (groupId, { description, amount, paid_by, split_type, participants, values }) => {
+    if (useApi) {
+      const body = { description, amount: Number(amount), paid_by, split_type };
+      if (split_type === 'EQUAL') {
+        body.participants = participants;
+      } else {
+        body.splits = participants.map((id) => (split_type === 'EXACT'
+          ? { user_id: id, amount: Number(values[id] || 0) }
+          : { user_id: id, percentage: Number(values[id] || 0) }));
+      }
+      const res = await apiCall('POST', `/groups/${groupId}/expenses`, body, token);
+      bump();
+      return res;
+    }
+
+    const totalPaise = toPaise(amount);
+    const rows = buildSplits({ totalPaise, splitType: split_type, participants, values });
+    const id = uid();
+    const expense = {
+      id,
+      group_id: groupId,
+      paid_by,
+      amount_paise: totalPaise,
+      description,
+      split_type,
+      created_at: new Date().toISOString(),
+    };
+    setSandbox((db) => ({
+      ...db,
+      expenses: [...db.expenses, expense],
+      splits: [...db.splits, ...rows.map((r) => ({ expense_id: id, ...r }))],
+    }));
+    return expense;
+  };
+
+  const addSettlement = async (groupId, { paid_by, paid_to, amount_paise }) => {
+    if (useApi) {
+      await apiCall('POST', `/groups/${groupId}/settlements`, { paid_by, paid_to, amount: amount_paise / 100 }, token);
+      bump();
+      return;
+    }
+    setSandbox((db) => ({
+      ...db,
+      settlements: [...db.settlements, {
+        id: uid(),
+        group_id: groupId,
+        paid_by,
+        paid_to,
+        amount_paise,
+        created_at: new Date().toISOString(),
+      }],
+    }));
+  };
+
+  /* ---------------- Auth with offline fallback ---------------- */
+  const authenticate = async (mode, form) => {
+    const email = form.email.trim().toLowerCase();
+    const name = (form.name || '').trim();
+    if (!EMAIL_RE.test(email)) throw new Error('Enter a valid email address');
+    if (mode === 'signup' && name.length < 2) throw new Error('Name must be at least 2 characters');
+    if (form.password.length < 6) throw new Error('Password must be at least 6 characters');
+
+    // 1) Live PostgreSQL path
+    if (online) {
+      try {
+        const body = mode === 'login'
+          ? { email, password: form.password }
+          : { name, email, password: form.password };
+        const r = await apiCall('POST', mode === 'login' ? '/auth/login' : '/auth/signup', body);
+        setSession({ mode: 'api', token: r.access_token, user: r.user });
+        notify(`Welcome, ${r.user.name}. Synced with PostgreSQL 🟢`);
+        return;
+      } catch (err) {
+        // The API answered with an error: surface it. Only network failures fall back.
+        if (!err.network) throw err;
+      }
+    }
+
+    // 2) Hybrid Sandbox fallback (offline or API unreachable)
+    const existing = sandbox.users.find((u) => u.email.toLowerCase() === email);
+    if (mode === 'login') {
+      if (!existing) throw new Error('No sandbox account for this email. Sign up to create one locally.');
+      setSession({ mode: 'sandbox', user: existing });
+    } else {
+      if (existing) throw new Error('An account with this email already exists');
+      const user = { id: uid(), name, email };
+      setSandbox((db) => ({ ...db, users: [...db.users, user] }));
+      setSession({ mode: 'sandbox', user });
+    }
+    notify('Offline: signed into Hybrid Sandbox ⚡ (passwords are not verified here)');
+  };
+
+  const logout = () => {
+    setSession(null);
+    notify('Signed out');
+  };
+
+  // Enters the local sample account without a server round trip
+  const demoLogin = () => {
+    const user = sandbox.users.find((u) => u.id === ME_ID) || sandbox.users[0];
+    setSession({ mode: 'sandbox', user });
+    notify('Signed into the demo account ⚡ (local sandbox)');
+  };
+
+  const resetSample = () => {
+    setSandbox(buildSeed());
+    if (session && session.mode === 'sandbox') setSession(null);
+    setActiveId(null);
+    bump();
+    notify('Sample data reset 🔄 (Hybrid Sandbox only)');
+  };
+
+  // Saves (or clears) the current user's UPI ID.
+  // PostgreSQL mode: PATCH /auth/me. Sandbox mode: stored on the sandbox user record.
+  const setUpi = async (userId, upi) => {
+    try {
+      if (useApi) {
+        const updated = await apiCall('PATCH', '/auth/me', { upi_id: upi || null }, token);
+        setSession((s) => (s ? { ...s, user: { ...s.user, upi_id: updated.upi_id } } : s));
+        notify(updated.upi_id ? 'UPI ID saved to your account' : 'UPI ID removed');
+        return;
+      }
+      setSandbox((db) => ({
+        ...db,
+        users: db.users.map((u) => (u.id === userId ? { ...u, upi_id: upi || null } : u)),
+      }));
+      notify(upi ? 'UPI ID saved in this browser' : 'UPI ID removed');
+    } catch (e) {
+      handleError(e);
+    }
+  };
+  const myUpi = useApi
+    ? (me.upi_id || '')
+    : ((sandbox.users.find((u) => u.id === me.id) || {}).upi_id || '');
+
+  // Smooth-scroll to a section through Lenis, offset for the sticky navbar
+  const goTo = (id) => {
+    if (lenisRef.current) {
+      lenisRef.current.scrollTo(`#${id}`, { offset: -80 });
+      return;
+    }
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const quickSplit = async (tpl) => {
+    if (!activeId || !summary) {
+      notify('Select a group in the workspace first', 'error');
+      return;
+    }
+    const ids = summary.members.map((m) => m.user_id);
+    if (!ids.length) {
+      notify('This group has no members yet', 'error');
+      return;
+    }
+    const payer = ids.includes(me.id) ? me.id : ids[0];
+    try {
+      await addExpense(activeId, {
+        description: tpl.name,
+        amount: tpl.amount,
+        paid_by: payer,
+        split_type: 'EQUAL',
+        participants: ids,
+        values: {},
+      });
+      notify(`✓ ${tpl.name} split across ${ids.length} people (${fmt(toPaise(tpl.amount))})`);
+    } catch (e) {
+      notify(e.message, 'error');
+    }
+  };
+
+  // Auth gate: nothing else is shown until the user logs in or signs up
+  if (!session) {
+    return (
+      <>
+        <AuthPage online={online === true} onSubmit={authenticate} onDemo={demoLogin} />
+        {toast && <div key={toast.id} className={`toast ${toast.type}`}>{toast.msg}</div>}
+      </>
+    );
+  }
+
+  const notice = useApi
+    ? null
+    : online
+      ? 'PostgreSQL is online. Sign in to sync your groups. You are viewing the local sandbox.'
+      : 'Offline: running in Hybrid Sandbox mode. Your data is saved in this browser.';
+
+  return (
+    <>
+      <Navbar
+        online={online === true}
+        session={session}
+        onLogout={logout}
+        onNav={goTo}
+      />
+      <main>
+        <Reveal>
+          <Hero summary={summary} groupName={activeGroup ? activeGroup.name : null} onGo={goTo} />
+        </Reveal>
+        <Reveal><Problem /></Reveal>
+        <Reveal>
+          <SettleUp
+            summary={summary}
+            me={me}
+            loading={loading}
+            groupName={activeGroup ? activeGroup.name : null}
+            useApi={useApi}
+            myUpi={myUpi}
+            onSetUpi={setUpi}
+          />
+        </Reveal>
+        <Reveal>
+          <Workspace
+            groups={groups}
+            activeId={activeId}
+            onSelect={setActiveId}
+            activeGroup={activeGroup}
+            summary={summary}
+            loading={loading}
+            me={me}
+            notice={notice}
+            notify={notify}
+            actions={{ createGroup, addMember, addExpense, addSettlement }}
+          />
+        </Reveal>
+        <Reveal><Simulator /></Reveal>
+        <Reveal>
+          <Templates
+            hasGroup={Boolean(activeId)}
+            memberCount={summary ? summary.members.length : 0}
+            onQuick={quickSplit}
+          />
+        </Reveal>
+      </main>
+      <Footer onReset={resetSample} />
+      {toast && <div key={toast.id} className={`toast ${toast.type}`}>{toast.msg}</div>}
+    </>
+  );
+}
+
+/* =====================================================================
+   NAVBAR (sticky, paper surface)
+   ===================================================================== */
+const NAV_LINKS = [
+  ['top', 'Overview'],
+  ['problem', 'Why ZeroOut'],
+  ['settle', 'Settle Up'],
+  ['workspace', 'Workspace'],
+  ['simulator', 'Simulator'],
+  ['templates', 'Templates'],
+];
+
+function Navbar({ online, session, onLogout, onNav }) {
+  return (
+    <header className="navbar">
+      <div className="container nav-inner">
+        <div className="brand" style={{ cursor: 'pointer' }} onClick={() => onNav('top')}>
+          ⚡ ZeroOut <span>₹</span>
+        </div>
+
+        <nav className="nav-links">
+          {NAV_LINKS.map(([id, label]) => (
+            <button key={id} className="nav-link" onClick={() => onNav(id)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="nav-right">
+          <span className={`pill ${online ? 'online' : 'offline'}`}>
+            {online ? '🟢 PostgreSQL Connected' : '⚡ Hybrid Sandbox Ready'}
+          </span>
+
+          {session ? (
+            <div className="who">
+              <span className="avatar" style={{ background: colorFor(session.user.id) }}>
+                {initials(session.user.name)}
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>
+                {session.user.name.split(' ')[0]}
+              </span>
+              <button className="btn btn-ghost btn-sm" onClick={onLogout}>Log out</button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+/* =====================================================================
+   SECTION 2: HERO + NATIVE macOS WINDOW MOCKUP
+   ===================================================================== */
+function Hero({ summary, groupName, onGo }) {
+  const spend = summary ? summary.expenses.reduce((a, e) => a + e.amount_paise, 0) : null;
+  const rawCount = summary ? summary.rawSettlements.length : null;
+  const heapCount = summary ? summary.optimizedSettlements.length : null;
+  const zero = summary ? summary.zeroSumPaise : null;
+  const bound = summary ? Math.max(0, summary.members.length - 1) : null;
+
+  return (
+    <section id="top" className="hero">
+      <div className="container">
+        <div style={{ textAlign: 'center' }}>
+          <span className="eyebrow">Max-Heap debt simplification · Paisa-exact splits</span>
+          <h1>
+            Split every rupee <span className="gradient-text">exactly</span>, then settle in N−1 transfers.
+          </h1>
+          <p className="lead">
+            ZeroOut splits bills to the paisa, computes each person's net balance, and uses a greedy
+            max-heap to cut a tangle of IOUs down to the fewest possible UPI transfers.
+          </p>
+          <div className="hero-cta">
+            <button className="btn btn-primary" onClick={() => onGo('workspace')}>
+              Open the live workspace →
+            </button>
+            <button className="btn btn-ghost" onClick={() => onGo('settle')}>
+              See how settling works
+            </button>
+          </div>
+        </div>
+
+        <div className="mac fade-in">
+          <div className="mac-bar">
+            <span className="mac-dot r" />
+            <span className="mac-dot y" />
+            <span className="mac-dot g" />
+            <div className="mac-url">🔒 https://zeroout.app/groups/goa-trip-2026</div>
+          </div>
+          <div className="mac-body">
+            <div className="kpi-grid">
+              <Kpi
+                label="Active Group Spend"
+                value={spend === null ? '—' : fmt(spend)}
+                sub={groupName || 'Select a group in the workspace'}
+                delay={0}
+              />
+              <Kpi
+                label="Raw Pairwise IOUs"
+                value={rawCount === null ? '—' : rawCount}
+                sub="Before simplification"
+                color="var(--color-sunburst)"
+                delay={100}
+              />
+              <Kpi
+                label="Heap-Optimized Transfers"
+                value={heapCount === null ? '—' : heapCount}
+                sub={bound === null ? 'Waiting for data' : `Bound: N−1 = ${bound}`}
+                color="var(--color-mint-pop)"
+                delay={200}
+              />
+              <Kpi
+                label="Zero-Sum Check"
+                value={zero === null ? '—' : fmt(zero)}
+                sub="Σ of all net balances"
+                color={zero === 0 ? 'var(--color-mint-pop)' : 'var(--color-ember)'}
+                delay={300}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* =====================================================================
+   SECTION 3: PROBLEM, RED vs GREEN COMPARISON
+   ===================================================================== */
+const PROBLEM_BAD = [
+  'Rounding drift: three people each paying ₹33.33 never totals ₹100.',
+  'Pairwise chaos: ten friends can create up to 45 separate IOUs for one trip.',
+  'Circular UPI transfers: A pays B, B pays C, C pays A, and nobody settles anything.',
+  'Nobody remembers who already paid whom, so the same debt gets paid twice.',
+];
+
+const PROBLEM_GOOD = [
+  'Integer paisa math: ₹100 ÷ 3 becomes ₹33.34, ₹33.33, ₹33.33, which sums to exactly ₹100.',
+  'Net balances are computed from the ledger, so every group total sums to zero.',
+  'Greedy max-heap pairs the biggest debtor with the biggest creditor: at most N−1 transfers.',
+  'Every expense and settlement is stored in PostgreSQL with an auditable heap trace.',
+];
+
+function Problem() {
+  return (
+    <section id="problem" className="band-paper">
+      <div className="container">
+        <div className="section-head">
+          <span className="eyebrow">The problem</span>
+          <h2>Group money gets messy. The math shouldn't.</h2>
+          <p className="lead">
+            Every shared bill quietly creates debts between everyone involved. Without structure, those
+            debts multiply, and the settlement plan becomes a guessing game.
+          </p>
+        </div>
+
+        <div className="compare">
+          <div className="cmp-card cmp-bad">
+            <span className="badge">Before</span>
+            <h3>Manual WhatsApp Bill Math &amp; Circular UPI Transfers</h3>
+            <ul>
+              {PROBLEM_BAD.map((t) => (
+                <li key={t}>
+                  <span className="cmp-icon">✕</span>
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="cmp-card cmp-good">
+            <span className="badge settle">After</span>
+            <h3>ZeroOut Max-Heap Optimization &amp; Paisa-Exact Splits</h3>
+            <ul>
+              {PROBLEM_GOOD.map((t) => (
+                <li key={t}>
+                  <span className="cmp-icon">✓</span>
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* =====================================================================
+   SECTION 4: YOUR BALANCE & SETTLE UP
+   ===================================================================== */
+const UPI_RE = /^[\w.\-]{2,255}@[A-Za-z]{2,64}$/;
+
+const HOW_STEPS = [
+  ['Add a bill', 'Every share is calculated in paise.'],
+  ['See who owes whom', 'Balances net out to ₹0.00.'],
+  ['Settle in at most N−1 payments', 'The max-heap pairs the biggest debtor with the biggest creditor.'],
+];
+
+function buildUpiLink({ payeeUpi, payeeName, amountPaise, note }) {
+  const q = (s) => encodeURIComponent(s);
+  return `upi://pay?pa=${q(payeeUpi)}&pn=${q(payeeName)}&am=${(amountPaise / 100).toFixed(2)}&cu=INR&tn=${q(note)}`;
+}
+
+function MiniAvatar({ id, name }) {
+  return (
+    <span className="avatar" style={{ background: colorFor(id), width: 26, height: 26, fontSize: 11 }}>
+      {initials(name)}
+    </span>
+  );
+}
+
+function PayViaUpi({ t, upi, groupName }) {
+  if (!upi) return <span className="hint">No UPI ID on file</span>;
+
+  let href = null;
+  try {
+    href = buildUpiLink({
+      payeeUpi: upi,
+      payeeName: t.to_name,
+      amountPaise: t.amount_paise,
+      note: `ZeroOut: ${groupName || 'settlement'}`,
+    });
+  } catch (e) {
+    href = null;
+  }
+  if (!href) return <span className="hint">Link unavailable</span>;
+  return <a className="btn btn-primary btn-sm" href={href}>Pay via UPI</a>;
+}
+
+function UpiForm({ myUpi, useApi, onSave }) {
+  const [value, setValue] = useState(myUpi || '');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setValue(myUpi || '');
+    setError('');
+  }, [myUpi]);
+
+  const submit = (e) => {
+    e.preventDefault();
+    const clean = value.trim();
+    // An empty value clears the saved UPI ID
+    if (clean !== '' && !UPI_RE.test(clean)) {
+      setError('Enter a UPI ID like name@bank');
+      return;
+    }
+    setError('');
+    onSave(clean);
+  };
+
+  return (
+    <form onSubmit={submit}>
+      <span className="label">Your UPI ID (optional)</span>
+      <div className="inline-form">
+        <input
+          className={`input ${error ? 'invalid' : ''}`}
+          placeholder="yourname@upi"
+          maxLength={256}
+          value={value}
+          aria-label="Your UPI ID"
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <button className="btn btn-ghost" type="submit">Save</button>
+      </div>
+      {error && <div className="errors" style={{ marginTop: 10 }}>{error}</div>}
+      <div className="hint" style={{ marginTop: 8 }}>
+        {useApi
+          ? 'Synced to your ZeroOut account.'
+          : 'Saved in this browser only. Sign in with a PostgreSQL account to sync it.'}
+      </div>
+    </form>
+  );
+}
+
+function TransferRow({ t, action }) {
+  return (
+    <div className="txn">
+      <div className="txn-flow">
+        <MiniAvatar id={t.from_user_id} name={t.from_name} />
+        <b>{t.from_name}</b>
+        <span className="arrow">pays</span>
+        <MiniAvatar id={t.to_user_id} name={t.to_name} />
+        <b>{t.to_name}</b>
+        <span style={{ marginLeft: 6, fontWeight: 700 }}>{fmt(t.amount_paise)}</span>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function TransferList({ title, rows, renderAction }) {
+  if (rows.length === 0) return null;
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <span className="label">{title}</span>
+      {rows.map((t) => (
+        <TransferRow
+          key={`${t.from_user_id}>${t.to_user_id}`}
+          t={t}
+          action={renderAction ? renderAction(t) : null}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SettleUp({ summary, me, loading, groupName, useApi, myUpi, onSetUpi }) {
+  const plan = summary ? summary.optimizedSettlements : [];
+  // A payee's UPI ID comes from the group summary, so every member's payments can use it
+  const upiOf = (id) => {
+    const m = summary ? summary.members.find((x) => x.user_id === id) : null;
+    return m ? m.upi_id : null;
+  };
+  const meRow = summary ? summary.members.find((m) => m.user_id === me.id) : null;
+  const youPay = plan.filter((t) => t.from_user_id === me.id);
+  const youReceive = plan.filter((t) => t.to_user_id === me.id);
+  const others = plan.filter((t) => t.from_user_id !== me.id && t.to_user_id !== me.id);
+
+  let position;
+  if (!summary) {
+    position = (
+      <div className="empty">
+        {loading ? 'Loading ledger…' : 'Select a group in the workspace to see your balance.'}
+      </div>
+    );
+  } else if (!meRow) {
+    position = <div className="empty">You are not a member of this group yet.</div>;
+  } else {
+    const net = meRow.net_paise;
+    const status = net > 0 ? 'You are owed' : net < 0 ? 'You owe' : 'All settled';
+    position = (
+      <>
+        <div className="row-item">
+          <span>Total you paid</span>
+          <b>{fmt(meRow.total_paid_paise)}</b>
+        </div>
+        <div className="row-item">
+          <span>Total you owe (your share)</span>
+          <b>{fmt(meRow.total_owed_paise)}</b>
+        </div>
+        <div className="row-item" style={{ borderBottom: 'none' }}>
+          <span>
+            Net balance
+            <span className="hint" style={{ display: 'block' }}>{status}</span>
+          </span>
+          <span className={net > 0 ? 'pos' : net < 0 ? 'neg' : 'zero'}>{fmtSigned(net)}</span>
+        </div>
+      </>
+    );
+  }
+
+  let plans;
+  if (!summary) {
+    plans = <div className="empty">{loading ? 'Loading ledger…' : 'No group selected.'}</div>;
+  } else if (summary.members.length === 0) {
+    plans = <div className="empty">No members yet. Add someone in the workspace.</div>;
+  } else if (plan.length === 0) {
+    plans = <div className="empty">Everyone is settled. Nothing left to pay. ✓</div>;
+  } else {
+    plans = (
+      <>
+        <TransferList
+          title="You pay"
+          rows={youPay}
+          renderAction={(t) => <PayViaUpi t={t} upi={upiOf(t.to_user_id)} groupName={groupName} />}
+        />
+        <TransferList title="You receive" rows={youReceive} />
+        <TransferList title="Other transfers in this group" rows={others} />
+      </>
+    );
+  }
+
+  return (
+    <section id="settle" className="band-concrete">
+      <div className="container">
+        <div className="section-head">
+          <span className="eyebrow">Your balance</span>
+          <h2>Your Balance &amp; Settle Up</h2>
+          <p className="lead">
+            See what you owe, what you're owed, and the fewest payments that clear the group.
+          </p>
+        </div>
+
+        <div className="how-grid">
+          {HOW_STEPS.map(([title, body], i) => (
+            <div className="card how-card" key={title}>
+              <div className="flow-num">{i + 1}</div>
+              <div>
+                <b style={{ fontSize: 15 }}>{title}</b>
+                <div className="hint" style={{ marginTop: 2 }}>{body}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="settle-grid">
+          <div className="card card-pad">
+            <div className="card-title">
+              <span>Your position</span>
+              {groupName && <span className="hint">{groupName}</span>}
+            </div>
+            {position}
+            <div style={{ marginTop: 20 }}>
+              <UpiForm myUpi={myUpi} useApi={useApi} onSave={(v) => onSetUpi(me.id, v)} />
+            </div>
+          </div>
+
+          <div className="card card-pad">
+            <div className="card-title">
+              <span>Who pays whom</span>
+              {summary && summary.members.length > 0 && (
+                <span className="hint">
+                  Max-heap plan · {plan.length} transfer{plan.length === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+            {plans}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* =====================================================================
+   SECTION 5: LIVE INTERACTIVE GROUP EXPENSE SPLITTER WORKSPACE
+   ===================================================================== */
+const CATEGORIES = ['Trip', 'Hostel', 'Home', 'Food', 'Other'];
+
+function Pending({ loading }) {
+  return (
+    <div className="empty">
+      {loading
+        ? 'Loading ledger…'
+        : 'Could not load this group. Check the connection pill in the navbar and try again.'}
+    </div>
+  );
+}
+
+function GroupSwitcher({ groups, activeId, onSelect, onCreate }) {
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('Trip');
+  const [busy, setBusy] = useState(false);
+  const clean = name.trim();
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (clean.length < 2) return;
+    setBusy(true);
+    const ok = await onCreate(clean, category);
+    if (ok) setName('');
+    setBusy(false);
+  };
+
+  return (
+    <>
+      <div className="card-title">
+        <span>Your Groups</span>
+        <span className="hint">{groups.length} total</span>
+      </div>
+
+      <div className="group-pills" style={{ marginBottom: 14 }}>
+        {groups.length === 0 && <span className="hint">No groups yet.</span>}
+        {groups.map((g) => (
+          <button
+            key={g.id}
+            className={`gpill ${g.id === activeId ? 'active' : ''}`}
+            onClick={() => onSelect(g.id)}
+          >
+            {g.name}
+            <span style={{ opacity: 0.7, fontWeight: 500 }}> · {g.member_count}</span>
+          </button>
+        ))}
+      </div>
+
+      <form className="inline-form" onSubmit={submit}>
+        <input
+          className="input"
+          placeholder="New group name, e.g. Manali Trip 2026"
+          value={name}
+          maxLength={150}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <select
+          className="input"
+          style={{ flex: '0 0 130px', minWidth: 0 }}
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+        >
+          {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <button className="btn btn-primary" type="submit" disabled={busy || clean.length < 2}>
+          + Create Group
+        </button>
+      </form>
+    </>
+  );
+}
+
+function AddMemberForm({ onAdd }) {
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const clean = email.trim().toLowerCase();
+  const valid = EMAIL_RE.test(clean);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!valid) return;
+    setBusy(true);
+    const ok = await onAdd(clean);
+    if (ok) setEmail('');
+    setBusy(false);
+  };
+
+  return (
+    <>
+      <form className="inline-form" onSubmit={submit} style={{ marginBottom: 6 }}>
+        <input
+          className={`input ${email && !valid ? 'invalid' : ''}`}
+          type="email"
+          placeholder="Add a member by email, e.g. sarthak.choudhari@zeroout.app"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <button className="btn btn-ghost" type="submit" disabled={!valid || busy}>
+          + Add Member
+        </button>
+      </form>
+      <div className="hint" style={{ marginBottom: 14 }}>
+        New members need a ZeroOut account with this email first.
+      </div>
+    </>
+  );
+}
+
+function BalanceSheet({ members }) {
+  if (members.length === 0) return <div className="empty">No members yet. Add someone above.</div>;
+
+  const totals = members.reduce(
+    (a, m) => ({
+      paid: a.paid + m.total_paid_paise,
+      owed: a.owed + m.total_owed_paise,
+      net: a.net + m.net_paise,
+    }),
+    { paid: 0, owed: 0, net: 0 }
+  );
+
+  return (
+    <>
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Member</th>
+              <th className="num">Total Paid</th>
+              <th className="num">Owed Share</th>
+              <th className="num">Net Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {members.map((m) => (
+              <tr key={m.user_id}>
+                <td>
+                  <div className="who">
+                    <span className="avatar" style={{ background: colorFor(m.user_id) }}>
+                      {initials(m.name)}
+                    </span>
+                    <div>
+                      {m.name}
+                      <small>{m.email}</small>
+                    </div>
+                  </div>
+                </td>
+                <td className="num">{fmt(m.total_paid_paise)}</td>
+                <td className="num">{fmt(m.total_owed_paise)}</td>
+                <td className="num">
+                  <span className={m.net_paise > 0 ? 'pos' : m.net_paise < 0 ? 'neg' : 'zero'}>
+                    {fmtSigned(m.net_paise)}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td style={{ fontWeight: 700 }}>Group totals</td>
+              <td className="num" style={{ fontWeight: 700 }}>{fmt(totals.paid)}</td>
+              <td className="num" style={{ fontWeight: 700 }}>{fmt(totals.owed)}</td>
+              <td className="num">
+                <span className={totals.net === 0 ? 'zero' : 'neg'}>{fmtSigned(totals.net)}</span>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p className="hint" style={{ marginTop: 10 }}>
+        Positive means the group owes this person. Negative means this person owes the group. The
+        totals row should always net to ₹0.00.
+      </p>
+    </>
+  );
+}
+
+function SettlementPlan({ summary, onSettle }) {
+  const [mode, setMode] = useState('heap');
+  const [showTrace, setShowTrace] = useState(false);
+  const [busyKey, setBusyKey] = useState(null);
+
+  const heap = summary.optimizedSettlements;
+  const raw = summary.rawSettlements;
+  const plan = mode === 'heap' ? heap : raw;
+  const n = summary.members.length;
+  const bound = Math.max(0, n - 1);
+
+  const settle = async (t) => {
+    const key = `${t.from_user_id}>${t.to_user_id}`;
+    setBusyKey(key);
+    await onSettle(t);
+    setBusyKey(null);
+  };
+
+  return (
+    <>
+      <div className="card-title">
+        <span>Group Settlement Plan</span>
+        <div className="seg seg-plan">
+          <button className={mode === 'heap' ? 'on' : ''} onClick={() => setMode('heap')}>
+            ⚡ Max-Heap Optimized
+          </button>
+          <button className={mode === 'raw' ? 'on' : ''} onClick={() => setMode('raw')}>
+            🔗 Raw Pairwise IOUs
+          </button>
+        </div>
+      </div>
+
+      <p className="hint" style={{ marginBottom: 6 }}>
+        {mode === 'heap'
+          ? `${heap.length} transfer${heap.length === 1 ? '' : 's'} settle the group. The bound for ${n} people is N−1 = ${bound}.`
+          : `${raw.length} separate IOU${raw.length === 1 ? '' : 's'} exist before simplification.`}
+      </p>
+
+      {plan.length === 0 ? (
+        <div className="empty">Everyone is settled. Nothing left to pay. ✓</div>
+      ) : (
+        plan.map((t) => {
+          const key = `${t.from_user_id}>${t.to_user_id}`;
+          return (
+            <div className="txn" key={key}>
+              <div className="txn-flow">
+                <span
+                  className="avatar"
+                  style={{ background: colorFor(t.from_user_id), width: 26, height: 26, fontSize: 11 }}
+                >
+                  {initials(t.from_name)}
+                </span>
+                <b>{t.from_name}</b>
+                <span className="arrow">pays</span>
+                <span
+                  className="avatar"
+                  style={{ background: colorFor(t.to_user_id), width: 26, height: 26, fontSize: 11 }}
+                >
+                  {initials(t.to_name)}
+                </span>
+                <b>{t.to_name}</b>
+                <span style={{ marginLeft: 6, fontWeight: 700 }}>{fmt(t.amount_paise)}</span>
+              </div>
+              <button
+                className="btn btn-success btn-sm"
+                disabled={busyKey === key}
+                onClick={() => settle(t)}
+              >
+                ✓ Settle Up
+              </button>
+            </div>
+          );
+        })
+      )}
+
+      <Reveal className="trace">
+        <button className="trace-toggle" onClick={() => setShowTrace((s) => !s)}>
+          <span>{showTrace ? '▾' : '▸'} View Max-Heap Step-by-Step Trace</span>
+          <span className="hint">{heap.length} step{heap.length === 1 ? '' : 's'}</span>
+        </button>
+        {showTrace && (
+          <div style={{ marginTop: 10 }}>
+            {summary.heapTrace.length === 0 ? (
+              <div className="hint">No steps. Every balance is already zero.</div>
+            ) : (
+              <>
+                <div className="hint" style={{ marginBottom: 6 }}>
+                  Each step pairs the largest remaining debtor with the largest remaining creditor.
+                </div>
+                {summary.heapTrace.map((t) => (
+                  <div className="trace-step" key={t.step}>
+                    Step {t.step}: {t.from_name} → {t.to_name} · <b>{fmt(t.transfer_paise)}</b>
+                    <br />
+                    <span style={{ color: 'var(--text-muted)' }}>
+                      left: {fmt(t.debtor_remaining_paise)} (debtor) / {fmt(t.creditor_remaining_paise)} (creditor)
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </Reveal>
+    </>
+  );
+}
+
+function ExpenseForm({ members, me, onSubmit, notify }) {
+  const defaultPayer = members.some((m) => m.user_id === me.id)
+    ? me.id
+    : members[0]
+      ? members[0].user_id
+      : '';
+
+  const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState('');
+  const [paidBy, setPaidBy] = useState(defaultPayer);
+  const [mode, setMode] = useState('EQUAL');
+  const [participants, setParticipants] = useState(() => members.map((m) => m.user_id));
+  const [values, setValues] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+
+  const nameOf = (id) => (members.find((m) => m.user_id === id) || {}).name || 'Unknown';
+
+  const totalPaise = toPaise(amount);
+  const dirty = description.trim() !== '' || amount !== '';
+
+  // Live validation: same engine as the backend, so the preview matches what gets saved.
+  let error = null;
+  let preview = null;
+  if (!description.trim()) {
+    error = 'Add a short description';
+  } else if (!(totalPaise > 0) || totalPaise > MAX_AMOUNT_PAISE) {
+    error = 'Enter an amount greater than ₹0';
+  } else if (participants.length === 0) {
+    error = 'Pick at least one participant';
+  } else {
+    try {
+      preview = buildSplits({ totalPaise, splitType: mode, participants, values });
+    } catch (e) {
+      error = e.message;
+    }
+  }
+
+  let allocatedLabel = null;
+  let allocatedOk = false;
+  if (mode === 'EXACT') {
+    const sum = participants.reduce((a, id) => a + toPaise(values[id] || 0), 0);
+    allocatedOk = sum === totalPaise;
+    allocatedLabel = `${fmt(sum)} of ${fmt(totalPaise)} allocated`;
+  } else if (mode === 'PERCENTAGE') {
+    const sum = participants.reduce((a, id) => a + Math.round(Number(values[id] || 0) * 100), 0);
+    allocatedOk = sum === 10000;
+    allocatedLabel = `${(sum / 100).toFixed(2)}% of 100% allocated`;
+  }
+
+  const toggle = (id) => {
+    setParticipants((prev) =>
+      members.map((m) => m.user_id).filter((x) => (x === id ? !prev.includes(id) : prev.includes(x)))
+    );
+  };
+
+  const loadTest = () => {
+    if (members.length === 0) return;
+    const ids = members.slice(0, 3).map((m) => m.user_id);
+    setDescription('Test: ₹100 ÷ 3');
+    setAmount('100');
+    setMode('EQUAL');
+    setParticipants(ids);
+    setValues({});
+    setPaidBy(ids[0]);
+    if (members.length < 3) {
+      notify('Add two more members to see the full ₹100 ÷ 3 remainder example', 'error');
+    }
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (error || submitting) return;
+    setSubmitting(true);
+    const ok = await onSubmit({
+      description: description.trim(),
+      amount,
+      paid_by: paidBy,
+      split_type: mode,
+      participants,
+      values,
+    });
+    if (ok) {
+      setDescription('');
+      setAmount('');
+      setValues({});
+    }
+    setSubmitting(false);
+  };
+
+  return (
+    <form onSubmit={submit}>
+      <div className="card-title" style={{ marginBottom: 14 }}>
+        <span>Add New Expense</span>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={loadTest}>
+          🧪 Load ₹100 ÷ 3 Test
+        </button>
+      </div>
+
+      <div className="seg" style={{ marginBottom: 14 }}>
+        {SPLIT_MODES.map((m) => (
+          <button key={m} type="button" className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>
+            {m}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid-2" style={{ marginBottom: 14 }}>
+        <div className="span-2">
+          <span className="label">Description</span>
+          <input
+            className="input"
+            placeholder="e.g. Dinner at the beach shack"
+            maxLength={255}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+        <div>
+          <span className="label">Amount (₹)</span>
+          <input
+            className={`input ${dirty && totalPaise <= 0 && amount !== '' ? 'invalid' : ''}`}
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="0.00"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+        </div>
+        <div>
+          <span className="label">Paid by</span>
+          <select className="input" value={paidBy} onChange={(e) => setPaidBy(e.target.value)}>
+            {members.map((m) => (
+              <option key={m.user_id} value={m.user_id}>{m.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <span className="label">Split between</span>
+      <div style={{ marginBottom: 6 }}>
+        {members.map((m) => {
+          const included = participants.includes(m.user_id);
+          const share = preview ? preview.find((p) => p.user_id === m.user_id) : null;
+          return (
+            <div className="split-row" key={m.user_id}>
+              <input type="checkbox" checked={included} onChange={() => toggle(m.user_id)} />
+              <span>{m.name}</span>
+              {mode === 'EQUAL' && (
+                <span className="num" style={{ fontWeight: 700 }}>
+                  {included && share ? fmt(share.amount_owed_paise) : '—'}
+                </span>
+              )}
+              {mode === 'EXACT' && (
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="₹ amount"
+                  disabled={!included}
+                  value={values[m.user_id] ?? ''}
+                  onChange={(e) => setValues((v) => ({ ...v, [m.user_id]: e.target.value }))}
+                />
+              )}
+              {mode === 'PERCENTAGE' && (
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  placeholder="% share"
+                  disabled={!included}
+                  value={values[m.user_id] ?? ''}
+                  onChange={(e) => setValues((v) => ({ ...v, [m.user_id]: e.target.value }))}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {allocatedLabel && (
+        <div className="hint" style={{ marginBottom: 10 }}>
+          <span className={allocatedOk ? 'pos' : 'neg'}>{allocatedLabel}</span>
+        </div>
+      )}
+
+      {mode === 'EQUAL' && preview && (
+        <div style={{ marginBottom: 12 }}>
+          {preview.map((p) => (
+            <span className="chip" key={p.user_id}>
+              {nameOf(p.user_id)} {fmt(p.amount_owed_paise)}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {dirty && error && <div className="errors" style={{ marginBottom: 12 }}>{error}</div>}
+
+      <button
+        className="btn btn-primary"
+        type="submit"
+        disabled={Boolean(error) || submitting}
+        style={{ width: '100%' }}
+      >
+        {submitting ? 'Saving…' : `+ Split ${totalPaise > 0 ? fmt(totalPaise) : 'Expense'}`}
+      </button>
+    </form>
+  );
+}
+
+function ActivityFeed({ summary }) {
+  const byId = new Map(summary.members.map((m) => [m.user_id, m.name]));
+  const nameOf = (id) => byId.get(id) || 'Unknown';
+
+  const items = [
+    ...summary.expenses.map((e) => ({ kind: 'expense', key: `e-${e.id}`, at: e.created_at, x: e })),
+    ...summary.settlements.map((s) => ({ kind: 'settle', key: `s-${s.id}`, at: s.created_at, x: s })),
+  ].sort((a, b) => new Date(b.at) - new Date(a.at));
+
+  if (items.length === 0) {
+    return <div className="empty">No expenses or settlements yet. Add one above.</div>;
+  }
+
+  return (
+    <div className="feed-scroll">
+      {items.map((it) => {
+        if (it.kind === 'expense') {
+          const x = it.x;
+          return (
+            <div className="feed-item" key={it.key}>
+              <div className="feed-ico">🧾</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>{x.description}</div>
+                <div className="hint" style={{ marginTop: 2 }}>
+                  Paid by {nameOf(x.paid_by)} · {when(x.created_at)}
+                  <span className={`badge ${x.split_type.toLowerCase()}`} style={{ marginLeft: 6 }}>
+                    {x.split_type}
+                  </span>
+                </div>
+              </div>
+              <b>{fmt(x.amount_paise)}</b>
+            </div>
+          );
+        }
+        const x = it.x;
+        return (
+          <div className="feed-item" key={it.key}>
+            <div className="feed-ico">🤝</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>
+                {nameOf(x.paid_by)} settled with {nameOf(x.paid_to)}
+              </div>
+              <div className="hint" style={{ marginTop: 2 }}>
+                {when(x.created_at)}
+                <span className="badge settle" style={{ marginLeft: 6 }}>SETTLEMENT</span>
+              </div>
+            </div>
+            <b>{fmt(x.amount_paise)}</b>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Workspace({ groups, activeId, onSelect, activeGroup, summary, loading, me, notice, notify, actions }) {
+  // Shared wrapper: run a mutation, toast the outcome, and report success to the caller.
+  const run = async (fn, success) => {
+    try {
+      await fn();
+      if (success) notify(success);
+      return true;
+    } catch (e) {
+      notify(e.message, 'error');
+      return false;
+    }
+  };
+
+  const ready = Boolean(activeGroup && summary);
+  const noticeClass = notice && notice.startsWith('Offline') ? 'notice warn' : 'notice';
+
+  return (
+    <section id="workspace" className="band-sky">
+      <div className="container">
+        <div className="section-head">
+          <span className="eyebrow">Live workspace</span>
+          <h2>Split a bill. Watch the debts collapse.</h2>
+          <p className="lead">
+            Every change below updates the balance sheet, the heap plan, and the ledger immediately.
+          </p>
+        </div>
+
+        {notice && <div className={noticeClass} style={{ marginBottom: 20 }}>{notice}</div>}
+
+        <div className="card card-pad" style={{ marginBottom: 20 }}>
+          <GroupSwitcher
+            groups={groups}
+            activeId={activeId}
+            onSelect={onSelect}
+            onCreate={(name, category) =>
+              run(() => actions.createGroup(name, category), `✓ Created "${name}"`)
+            }
+          />
+        </div>
+
+        {!activeGroup ? (
+          <div className="card card-pad empty">No groups yet. Create one above to start splitting.</div>
+        ) : !ready ? (
+          <div className="card card-pad">
+            <Pending loading={loading} />
+          </div>
+        ) : (
+          <div className="ws-grid">
+            <div className="ws-col">
+              <div className="card card-pad">
+                <div className="card-title">
+                  <span>Per-Person Net Balance Sheet</span>
+                  <span className="hint">{summary.members.length} members</span>
+                </div>
+                <AddMemberForm
+                  onAdd={(email) =>
+                    run(() => actions.addMember(activeGroup.id, email), `✓ Added ${email}`)
+                  }
+                />
+                <BalanceSheet members={summary.members} />
+              </div>
+
+              <div className="card card-pad">
+                <SettlementPlan
+                  summary={summary}
+                  onSettle={(t) =>
+                    run(
+                      () =>
+                        actions.addSettlement(activeGroup.id, {
+                          paid_by: t.from_user_id,
+                          paid_to: t.to_user_id,
+                          amount_paise: t.amount_paise,
+                        }),
+                      `🤝 ${t.from_name} settled ${fmt(t.amount_paise)} with ${t.to_name}`
+                    )
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="ws-col">
+              <div className="card card-pad">
+                <ExpenseForm
+                  key={`${activeGroup.id}-${summary.members.map((m) => m.user_id).join(',')}`}
+                  members={summary.members}
+                  me={me}
+                  notify={notify}
+                  onSubmit={(data) =>
+                    run(
+                      () => actions.addExpense(activeGroup.id, data),
+                      `✓ Saved "${data.description}" for ${fmt(toPaise(data.amount))}`
+                    )
+                  }
+                />
+              </div>
+
+              <div className="card card-pad">
+                <div className="card-title">
+                  <span>Expense &amp; Settlement History</span>
+                  <span className="hint">{summary.expenses.length + summary.settlements.length} entries</span>
+                </div>
+                <ActivityFeed summary={summary} />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* =====================================================================
+   SECTION 6: INTERACTIVE DEBT REDUCTION SIMULATOR
+   Worst case: N(N-1)/2 pairwise IOUs.
+   Realistic raw IOUs: each bill creates at most one debt per non-payer,
+   capped at the worst case: min(N(N-1)/2, bills × (N-1)).
+   Max-heap bound: N-1, regardless of bill count.
+   ===================================================================== */
+function Simulator() {
+  const [people, setPeople] = useState(6);
+  const [bills, setBills] = useState(20);
+
+  const worst = (people * (people - 1)) / 2;
+  const heap = people - 1;
+  const realistic = Math.min(worst, bills * (people - 1));
+  const saved = worst - heap;
+  const savedPct = worst > 0 ? Math.round((saved / worst) * 100) : 0;
+  const max = Math.max(worst, 1);
+  const width = (v) => `${(v / max) * 100}%`;
+
+  return (
+    <section id="simulator" className="band-paper">
+      <div className="container">
+        <div className="section-head">
+          <span className="eyebrow">Simulator</span>
+          <h2>How many transfers does your trip really need?</h2>
+          <p className="lead">
+            Drag the sliders to compare pairwise settlements against the max-heap bound.
+          </p>
+        </div>
+
+        <div className="card card-pad sim-grid">
+          <div>
+            <div className="bar-head">
+              <span>Group size</span>
+              <b>{people} people</b>
+            </div>
+            <input
+              type="range"
+              min="3"
+              max="25"
+              step="1"
+              value={people}
+              onChange={(e) => setPeople(Number(e.target.value))}
+            />
+            <div className="hint" style={{ marginBottom: 26 }}>Range: 3 to 25 friends</div>
+
+            <div className="bar-head">
+              <span>Trip bills</span>
+              <b>{bills} expenses</b>
+            </div>
+            <input
+              type="range"
+              min="5"
+              max="100"
+              step="1"
+              value={bills}
+              onChange={(e) => setBills(Number(e.target.value))}
+            />
+            <div className="hint" style={{ marginBottom: 22 }}>Range: 5 to 100 expenses</div>
+
+            <div className="notice" style={{ marginTop: 6 }}>
+              Max-heap settlement needs at most <b>N−1 = {heap}</b> transfers, no matter how many bills
+              you add. Pairwise settlement can grow to <b>{worst}</b>.
+            </div>
+          </div>
+
+          <div>
+            <Bar
+              label="Worst-case pairwise transfers · N(N−1)/2"
+              value={worst}
+              width={width(worst)}
+              cls="bar-worst"
+            />
+            <Bar
+              label="Realistic raw IOUs · min(N(N−1)/2, bills × (N−1))"
+              value={realistic}
+              width={width(realistic)}
+              cls="bar-raw"
+            />
+            <Bar
+              label="Max-heap bound · N−1"
+              value={heap}
+              width={width(heap)}
+              cls="bar-heap"
+            />
+
+            <div className="row-item" style={{ borderBottom: 'none', marginTop: 8 }}>
+              <span>Transfers saved by the max-heap</span>
+              <b className="pos">
+                {saved} ({savedPct}%)
+              </b>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* =====================================================================
+   SECTION 7: 1-CLICK INDIAN GROUP EXPENSE TEMPLATES
+   ===================================================================== */
+const TEMPLATES = [
+  { name: 'Goa Beach Shack Dinner', amount: 2400, emoji: '🍤', note: 'Seafood dinner with the whole group' },
+  { name: 'Lonavala Villa', amount: 9600, emoji: '🏡', note: 'Weekend villa booking, two nights' },
+  { name: 'Hostel Maid & Cook', amount: 3000, emoji: '🧹', note: 'Monthly help for the room' },
+  { name: 'ACT Fibernet Wi-Fi', amount: 1178, emoji: '📶', note: 'Monthly broadband bill' },
+  { name: 'Zomato Order', amount: 840, emoji: '🍔', note: 'Late-night food delivery' },
+  { name: 'Uber Intercity Cab', amount: 1500, emoji: '🚕', note: 'Airport or highway ride' },
+];
+
+function Templates({ hasGroup, memberCount, onQuick }) {
+  const [busy, setBusy] = useState(null);
+
+  const run = async (tpl) => {
+    setBusy(tpl.name);
+    try {
+      await onQuick(tpl);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section id="templates" className="band-concrete">
+      <div className="container">
+        <div className="section-head">
+          <span className="eyebrow">Templates</span>
+          <h2>One-click Indian group expenses</h2>
+          <p className="lead">
+            Common bills from trips, hostels, and daily life. Each template splits equally across the
+            members of the group you select.
+          </p>
+        </div>
+
+        {!hasGroup && (
+          <div className="notice warn" style={{ marginBottom: 20 }}>
+            Select or create a group in the workspace first, then use a template.
+          </div>
+        )}
+
+        <div className="tpl-grid">
+          {TEMPLATES.map((t) => {
+            const paise = toPaise(t.amount);
+            return (
+              <div className="card tpl" key={t.name}>
+                <div className="tpl-emoji">{t.emoji}</div>
+                <div>
+                  <h3>{t.name}</h3>
+                  <div className="hint" style={{ marginTop: 4 }}>{t.note}</div>
+                </div>
+                <div className="tpl-amt">{fmt(paise)}</div>
+                <div className="hint">
+                  {memberCount > 0
+                    ? `≈ ${fmt(Math.floor(paise / memberCount))} per person`
+                    : 'Per-person share depends on group size'}
+                </div>
+                <button
+                  className="btn btn-primary btn-sm"
+                  style={{ marginTop: 'auto' }}
+                  disabled={!hasGroup || busy !== null}
+                  onClick={() => run(t)}
+                >
+                  {busy === t.name ? 'Splitting…' : '+ Quick Split in Group'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* =====================================================================
+   SECTION 8: AUTH GATE + CARBON FOOTER
+   The main page is only shown after the user logs in or signs up.
+   ===================================================================== */
+function AuthPage({ online, onSubmit, onDemo }) {
+  const [mode, setMode] = useState('login');
+  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const switchMode = (next) => {
+    setMode(next);
+    setError('');
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      // On success the App switches to the main page, which unmounts this screen.
+      await onSubmit(mode, form);
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <main className="auth-page">
+      <div className="auth-card fade-in">
+        <div className="brand" style={{ textAlign: 'center' }}>
+          ⚡ ZeroOut <span>₹</span>
+        </div>
+        <p className="lead" style={{ marginTop: 12, marginBottom: 24 }}>
+          Log in to split bills, track balances, and settle up.
+        </p>
+
+        <div className="seg" style={{ marginBottom: 16 }}>
+          <button type="button" className={mode === 'login' ? 'on' : ''} onClick={() => switchMode('login')}>
+            Log in
+          </button>
+          <button type="button" className={mode === 'signup' ? 'on' : ''} onClick={() => switchMode('signup')}>
+            Sign up
+          </button>
+        </div>
+
+        <div style={{ marginBottom: 18 }}>
+          <span className={`pill ${online ? 'online' : 'offline'}`}>
+            {online ? '🟢 PostgreSQL Connected' : '⚡ Hybrid Sandbox Ready'}
+          </span>
+          <div className="hint" style={{ marginTop: 8 }}>
+            {online
+              ? 'Your groups and expenses sync to PostgreSQL.'
+              : 'PostgreSQL is offline, so you will sign into the local sandbox. Passwords are not verified there.'}
+          </div>
+        </div>
+
+        <form onSubmit={submit}>
+          {mode === 'signup' && (
+            <div style={{ marginBottom: 12 }}>
+              <span className="label">Full name</span>
+              <input
+                className="input"
+                placeholder="Siddharth Nain"
+                maxLength={100}
+                value={form.name}
+                onChange={set('name')}
+                required
+              />
+            </div>
+          )}
+          <div style={{ marginBottom: 12 }}>
+            <span className="label">Email</span>
+            <input
+              className="input"
+              type="email"
+              placeholder="you@example.com"
+              maxLength={255}
+              value={form.email}
+              onChange={set('email')}
+              required
+            />
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <span className="label">Password</span>
+            <input
+              className="input"
+              type="password"
+              placeholder="At least 6 characters"
+              minLength={6}
+              maxLength={72}
+              value={form.password}
+              onChange={set('password')}
+              required
+            />
+          </div>
+
+          {error && <div className="errors" style={{ marginBottom: 12 }}>{error}</div>}
+
+          <button className="btn btn-primary" type="submit" disabled={busy} style={{ width: '100%' }}>
+            {busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account'}
+          </button>
+        </form>
+
+        <div className="auth-divider">or</div>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          style={{ width: '100%' }}
+          disabled={busy}
+          onClick={onDemo}
+        >
+          Continue with the demo account
+        </button>
+        <div className="hint" style={{ marginTop: 8, textAlign: 'center' }}>
+          The demo signs into the sample Goa and Hostel groups in this browser.
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function Footer({ onReset }) {
+  const confirmReset = () => {
+    if (window.confirm('Reset the Hybrid Sandbox to the sample Goa and Hostel groups? Local changes will be lost.')) {
+      onReset();
+    }
+  };
+
+  return (
+    <footer>
+      <div className="container footer-grid">
+        <div>
+          <div className="brand">
+            ⚡ ZeroOut <span>₹</span>
+          </div>
+          <p className="footer-note" style={{ marginTop: 8 }}>
+            Paisa-exact splits and max-heap debt simplification.
+          </p>
+        </div>
+
+        <button className="btn btn-dark-ghost btn-sm" onClick={confirmReset}>
+          🔄 Reset Sample Data
+        </button>
+
+        <div className="footer-note">
+          © 2026 ZeroOut. Built with React 18, Node.js, Express, and PostgreSQL.
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+/* =====================================================================
+   MOUNT
+   ===================================================================== */
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
